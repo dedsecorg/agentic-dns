@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "agentic-dns": {
+      "command": "/usr/local/bin/agentic-dns",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "PIHOLE_HOST": "127.0.0.1",
+        "AGENTIC_DNS_API_PORT": "8099"
+      }
+    }
+  }
+}
