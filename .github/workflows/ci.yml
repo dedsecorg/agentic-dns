@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bind9-utils jq socat
+          
+      - name: Syntax Check
+        run: bash -n bin/agentic-dns
+        
+      - name: Run Test Suite
+        run: ./tests/test_cli.sh

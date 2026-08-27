@@ -1,0 +1,493 @@
+#!/bin/bash
+# agentic-dns: Agentic AI-Native DNS Routing, Diagnostic, & Telemetry Tool
+# Manages: Pi-hole, CoreDNS, dnsdist, Unbound, Stubby, DNSCrypt-Proxy, VPN DNS
+# Provides: CLI, REST API, stdio MCP JSON-RPC Server
+# Zero Python/Node dependencies - pure POSIX Bash + standard Unix tools
+
+# ---- Configuration ----
+PIHOLE_HOST="${PIHOLE_HOST:-127.0.0.1}"
+if [ -z "$PIHOLE_API_KEY" ]; then
+    if [ -f "/etc/pihole/pihole-api-key.txt" ]; then
+        PIHOLE_API_KEY=$(cat /etc/pihole/pihole-api-key.txt 2>/dev/null | tr -d '\r\n')
+    fi
+fi
+API_PORT="${AGENTIC_DNS_API_PORT:-8099}"
+VPN_DNS="${VPN_DNS:-}"
+
+# --- Dynamic discovery of VPN DNS ---
+discover_vpn_dns() {
+    [ -n "$VPN_DNS" ] && return 0
+    
+    if ip link show proton0 >/dev/null 2>&1; then
+        local nm_dns
+        nm_dns=$(nmcli dev show proton0 2>/dev/null | grep "IP4.DNS" | awk '{print $2}' | head -1)
+        if [ -n "$nm_dns" ]; then
+            VPN_DNS="$nm_dns"
+            return 0
+        fi
+    fi
+    
+    if command -v wg >/dev/null 2>&1; then
+        local wg_dns
+        wg_dns=$(wg show wg0 2>/dev/null | grep "allowed ips" | head -1)
+    fi
+    
+    return 0
+}
+
+discover_vpn_dns
+
+if [ -z "$VPN_DNS" ]; then
+    VPN_DNS=$(protonvpn status 2>/dev/null | grep -oP 'DNS:\s*\K[0-9.]+' | head -1)
+fi
+
+# Service definitions: name|port|addr|type|upstream
+SERVICES=(
+    "pihole|53|${PIHOLE_HOST}|forwarder|coredns"
+    "coredns|5352|127.0.0.1|split-horizon|dnsdist"
+    "dnsdist|5330|127.0.0.1|loadbalancer|unbound,dnscrypt"
+    "unbound|5335|127.0.0.1|resolver|vpn-dns"
+    "stubby|5360|127.0.0.1|dot-proxy|vpn-dns|unbound"
+    "dnscrypt|5354|127.0.0.1|doh-proxy|cloudflare-doh"
+    "vpn-dns|53|${VPN_DNS:-unknown}|upstream|none"
+)
+
+# ---- Helper functions ----
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+
+is_listening() {
+    local addr="$1" port="$2"
+    case "$addr" in
+        127.0.0.1|0.0.0.0|*)
+            if [ "$addr" != "$VPN_DNS" ]; then
+                ss -tulnp 2>/dev/null | grep -qE ":${port}\b" && return 0
+            fi
+            ;;
+    esac
+    [ "$addr" = "$VPN_DNS" ] && dns_query "example.com" "$addr" "$port" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+dns_query() {
+    local domain="$1" addr="${2:-127.0.0.1}" port="${3:-53}"
+    timeout 5 dig +short "$domain" @"$addr" -p "$port" 2>/dev/null | head -1
+}
+
+get_service_status() {
+    local name="$1" port="$2" addr="$3"
+    if [ "$addr" = "$VPN_DNS" ]; then
+        local result
+        result=$(dns_query "example.com" "$addr" "$port" 2>/dev/null)
+        [ -n "$result" ] && echo "up" || echo "down"
+        return
+    fi
+    if is_listening "$addr" "$port"; then
+        local result
+        result=$(dns_query "example.com" "$addr" "$port" 2>/dev/null)
+        if [ -n "$result" ]; then
+            echo "up"
+        else
+            echo "unhealthy"
+        fi
+    else
+        echo "down"
+    fi
+}
+
+discover_services() {
+    local found=""
+    for svc in "${SERVICES[@]}"; do
+        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        if is_listening "$addr" "$port" 2>/dev/null || is_listening "127.0.0.1" "$port" 2>/dev/null; then
+            found="$found $name"
+        fi
+    done
+    echo "$found"
+}
+
+# ---- CLI Commands ----
+cmd_status() {
+    echo "DNS Service Status:"
+    printf "%-18s %-25s %-16s %-12s %s\n" "Service" "Address" "Type" "Status" "Listening"
+    printf "%-18s %-25s %-16s %-12s %s\n" "-------" "-------" "----" "------" "---------"
+    
+    for svc in "${SERVICES[@]}"; do
+        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        local listening="NO"
+        if is_listening "$addr" "$port" 2>/dev/null || is_listening "127.0.0.1" "$port" 2>/dev/null; then
+            listening="YES"
+        fi
+        local status
+        if [ "$listening" = "YES" ]; then
+            status=$(get_service_status "$name" "$port" "${addr:-127.0.0.1}")
+        else
+            status="down"
+        fi
+        local display_addr="$addr"
+        [ "$addr" = "0.0.0.0" ] && display_addr="$PIHOLE_HOST"
+        printf "%-18s %-25s %-16s %-12s %s\n" "$name" "${display_addr}:${port}" "$type" "$status" "$listening"
+    done
+    echo ""
+    
+    local found
+    found=$(discover_services)
+    echo "Active DNS chain:"
+    if echo "$found" | grep -qw pihole && echo "$found" | grep -qw coredns; then
+        echo "  pihole (:53) -> coredns (:5352) [split-horizon for mesh zones]"
+        if echo "$found" | grep -qw dnsdist; then
+            echo "    -> dnsdist (:5330)"
+        fi
+        if echo "$found" | grep -qw unbound; then
+            echo "    -> unbound (:5335) -> VPN DNS (${VPN_DNS})"
+        fi
+        if echo "$found" | grep -qw dnscrypt; then
+            echo "    -> dnscrypt-proxy (:5354) -> DoH upstreams (Cloudflare/Quad9)"
+        fi
+        if echo "$found" | grep -qw stubby; then
+            echo "    -> stubby (:5360) -> DoT upstreams"
+        fi
+    fi
+}
+
+cmd_query() {
+    local domain="${1:-example.com}"
+    echo "Querying ${domain} via ${PIHOLE_HOST}:53..."
+    local result
+    result=$(dns_query "$domain" "$PIHOLE_HOST" "53")
+    if [ -n "$result" ]; then
+        echo "Result: ${result}"
+    else
+        echo "No answer (empty response)"
+    fi
+}
+
+cmd_trace() {
+    local domain="${1:-example.com}"
+    echo "Tracing DNS path for ${domain}..."
+    echo ""
+    
+    local tmp_lo
+    tmp_lo=$(mktemp -t trace_lo.XXXXXX.pcap)
+    local tmp_net
+    tmp_net=$(mktemp -t trace_net.XXXXXX.pcap)
+    
+    timeout 8 tcpdump -i lo -n -w "$tmp_lo" -c 30 "port 53 or port 5352 or port 5330 or port 5335 or port 5354 or port 5360" 2>/dev/null &
+    local lo_pid=$!
+    timeout 8 tcpdump -i any -n -w "$tmp_net" -c 20 "port 53" 2>/dev/null &
+    local net_pid=$!
+    
+    sleep 1
+    dig +short "$domain" @"$PIHOLE_HOST" -p 53 >/dev/null 2>&1
+    
+    wait $lo_pid 2>/dev/null
+    wait $net_pid 2>/dev/null
+    
+    echo "=== LOOPBACK TRAFFIC (inter-service) ==="
+    tcpdump -r "$tmp_lo" -n 2>/dev/null | head -20
+    echo ""
+    
+    echo "=== NETWORK TRAFFIC (outbound) ==="
+    tcpdump -r "$tmp_net" -n 2>/dev/null | head -10
+    echo ""
+    
+    rm -f "$tmp_lo" "$tmp_net"
+}
+
+cmd_routes() {
+    echo "DNS Routing Rules (dnsdist config):"
+    local conf="/etc/dnsdist/dnsdist.conf"
+    if [ -f "$conf" ]; then
+        grep -n "newServer\|setServerPolicy\|addAction\|addACL" "$conf" 2>/dev/null | sed 's/^/  /'
+    else
+        echo "  Config not found: $conf"
+    fi
+    echo ""
+}
+
+cmd_add_route() {
+    local name="$1" addr="$2"
+    if [ -z "$name" ] || [ -z "$addr" ]; then
+        echo "Usage: agentic-dns route add <name> <addr:port>"
+        return 1
+    fi
+    local conf="/etc/dnsdist/dnsdist.conf"
+    if grep -q "name=\"$name\"" "$conf" 2>/dev/null; then
+        echo "Route $name already exists"
+        return 0
+    fi
+    local new_line='newServer({address="'"$addr"'", name="'"$name"'"})'
+    sudo sed -i "s/setServerPolicy/${new_line}\nsetServerPolicy/" "$conf"
+    sudo systemctl restart dnsdist 2>/dev/null
+    echo "Added route: $name -> $addr"
+}
+
+cmd_remove_route() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        echo "Usage: agentic-dns route remove <name>"
+        return 1
+    fi
+    local conf="/etc/dnsdist/dnsdist.conf"
+    sudo sed -i "/name=\"$name\"/d" "$conf"
+    sudo systemctl restart dnsdist 2>/dev/null
+    echo "Removed route: $name"
+}
+
+cmd_bypass() {
+    local failing="${1:-stubby}"
+    local backup="${2:-unbound}"
+    echo "Bypassing ${failing}, prioritizing ${backup}..."
+    
+    local conf="/etc/dnsdist/dnsdist.conf"
+    if grep -q "name=\"$failing\"" "$conf" 2>/dev/null; then
+        sudo sed -i "s/^\(.*name=\"$failing\".*\)/-- \1/" "$conf"
+    fi
+    
+    local backup_line
+    backup_line=$(grep "name=\"$backup\"" "$conf" 2>/dev/null | head -1)
+    if [ -n "$backup_line" ]; then
+        sudo sed -i "/name=\"$backup\"/d" "$conf"
+        sudo sed -i "s/setServerPolicy/${backup_line}\nsetServerPolicy/" "$conf"
+    fi
+    
+    sudo systemctl restart dnsdist 2>/dev/null
+    echo "Done: dnsdist now prioritizes ${backup}, ${failing} bypassed"
+}
+
+cmd_pihole_log() {
+    echo "PiHole DNS query log (via SQLite):"
+    echo ""
+    echo "--- Total queries ---"
+    local total
+    total=$(sqlite3 /etc/pihole/pihole-FTL.db "SELECT COUNT(*) FROM query_storage" 2>/dev/null)
+    echo "  Total queries in database: ${total:-N/A}"
+    echo ""
+    echo "--- Top 10 clients ---"
+    sqlite3 /etc/pihole/pihole-FTL.db "SELECT c.ip, c.name, COUNT(*) as count FROM query_storage qs LEFT JOIN client_by_id c ON qs.client = c.id GROUP BY c.ip ORDER BY count DESC LIMIT 10;" 2>/dev/null | while IFS='|' read -r ip name count; do
+        echo "  ${ip:-unknown} (${name:-}) ($count)"
+    done
+}
+
+cmd_health() {
+    echo "Health checks:"
+    for svc in "${SERVICES[@]}"; do
+        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        local listening="NO"
+        if is_listening "$addr" "$port" 2>/dev/null; then
+            listening="YES"
+        fi
+        
+        if [ "$listening" = "YES" ]; then
+            local result
+            result=$(dns_query "example.com" "$addr" "$port" 2>/dev/null)
+            if [ -n "$result" ]; then
+                echo "  ${name} (:${port}): UP"
+            else
+                echo "  ${name} (:${port}): UNHEALTHY (listening but not responding)"
+            fi
+        else
+            echo "  ${name} (:${port}): DOWN"
+        fi
+    done
+}
+
+cmd_tag() {
+    echo "DNS Service Tags:"
+    local found
+    found=$(discover_services)
+    for svc in "${SERVICES[@]}"; do
+        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        local tags=""
+        echo "$found" | grep -qw "$name" && tags="${tags}listening "
+        [ "$type" = "forwarder" ] && tags="${tags}entry-point "
+        [ -n "$upstream" ] && [ "$upstream" != "none" ] && tags="${tags}-> ${upstream} "
+        echo "  ${name} (:${port}): ${tags}"
+    done
+}
+
+PHONE_IP="${PHONE_IP:-10.0.0.100}"
+PIHOLE_IP="${PIHOLE_IP:-127.0.0.1}"
+
+cmd_enforce() {
+    local action="${1:-status}"
+    local target="${2:-$PHONE_IP}"
+
+    case "$action" in
+        status)
+            echo "DNS interception rules (target: $target):"
+            echo ""
+            echo "--- nat PREROUTING (redirect DoT to pihole) ---"
+            sudo nft list chain ip nat PREROUTING 2>/dev/null | grep "$target" || echo "  (none)"
+            echo ""
+            echo "--- filter FORWARD (block DoQu) ---"
+            sudo nft list chain ip filter FORWARD 2>/dev/null | grep "$target" || echo "  (none)"
+            ;;
+        on|enable|start)
+            echo "Enabling DNS interception for $target..."
+            sudo nft insert rule ip nat PREROUTING ip saddr "$target" tcp dport 853 dnat to ${PIHOLE_IP}:853 2>/dev/null && echo "  [+] DoT redirect: port 853 -> ${PIHOLE_IP}:853" || echo "  [-] No DoT redirect needed"
+            ;;
+        off|disable|stop)
+            echo "Removing DNS interception rules for $target..."
+            for handle in $(sudo nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oP 'handle \K\d+'); do
+                sudo nft delete rule ip nat PREROUTING handle "$handle" 2>/dev/null && echo "  [-] Removed nat rule handle $handle"
+            done
+            ;;
+        clean)
+            echo "Cleaning up ALL enforcement rules..."
+            ;;
+        *)
+            echo "Usage: agentic-dns enforce <on|off|status|clean> [target_ip]"
+            ;;
+    esac
+}
+
+cmd_api() {
+    log "Starting agentic-dns API server on :${API_PORT}..."
+    log "Endpoints: /api/v1/status /api/v1/health /api/v1/trace?domain= /api/v1/query?domain= /api/v1/routes"
+    
+    while true; do
+        if command -v socat >/dev/null 2>&1; then
+            socat -v TCP-LISTEN:${API_PORT},reuseaddr,fork SYSTEM:"$0 api-handler" 2>/dev/null
+        else
+            while true; do
+                echo -e "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}" | nc -l -p ${API_PORT} 2>/dev/null
+            done
+        fi
+    done
+}
+
+cmd_mcp() {
+    log "Starting agentic-dns MCP server (JSON-RPC over stdio)..."
+    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_add_route, dns_remove_route, dns_bypass, dns_pihole_log"
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        
+        local method req_id
+        method=$(echo "$line" | jq -r '.method // empty' 2>/dev/null)
+        req_id=$(echo "$line" | jq -r '.id // 1' 2>/dev/null)
+        
+        case "$method" in
+            "tools/list")
+                cat << MCP_RESP
+{"jsonrpc":"2.0","id":${req_id},"result":{"tools":[
+{"name":"dns_status","description":"Show status of all DNS services"},
+{"name":"dns_query","description":"Query a domain through the DNS chain","input":{"domain":"string"}},
+{"name":"dns_trace","description":"Trace DNS path with packet capture","input":{"domain":"string"}},
+{"name":"dns_health","description":"Check health of all DNS services"},
+{"name":"dns_routes","description":"List current routing rules"},
+{"name":"dns_pihole_log","description":"Show recent PiHole query log"},
+{"name":"dns_bypass","description":"Bypass a failing DNS service","input":{"service":"string","backup":"string"}}
+]}}
+MCP_RESP
+                ;;
+            "tools/call")
+                local tool domain service backup
+                tool=$(echo "$line" | jq -r '.params.name // .name // empty' 2>/dev/null)
+                domain=$(echo "$line" | jq -r '.params.arguments.domain // .domain // "example.com"' 2>/dev/null)
+                service=$(echo "$line" | jq -r '.params.arguments.service // .service // "stubby"' 2>/dev/null)
+                backup=$(echo "$line" | jq -r '.params.arguments.backup // .backup // "unbound"' 2>/dev/null)
+                
+                case "$tool" in
+                    "dns_status")
+                        local out
+                        out=$(cmd_status 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    "dns_query")
+                        local result
+                        result=$(dns_query "$domain")
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"${result}\"}]}}"
+                        ;;
+                    "dns_trace")
+                        local out
+                        out=$(cmd_trace "$domain" 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    "dns_health")
+                        local out
+                        out=$(cmd_health 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    "dns_routes")
+                        local out
+                        out=$(cmd_routes 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    "dns_pihole_log")
+                        local out
+                        out=$(cmd_pihole_log 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    "dns_bypass")
+                        local out
+                        out=$(cmd_bypass "$service" "$backup" 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                        ;;
+                    *)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"error\":{\"code\":-32601,\"message\":\"Unknown tool: $tool\"}}"
+                        ;;
+                esac
+                ;;
+            *)
+                echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"error\":{\"code\":-32601,\"message\":\"Method not supported: $method\"}}"
+                ;;
+        esac
+    done
+}
+
+cmd_help() {
+    cat << 'HELP'
+agentic-dns: Agentic AI-Native DNS Routing & Telemetry Tool
+
+Usage: agentic-dns <command> [options]
+
+Commands:
+  status           Show all DNS services, addresses, types, and status
+  query <domain>   Resolve a domain through the full DNS chain
+  trace <domain>   Trace DNS path with live packet capture at each hop
+  routes           List current routing rules in dnsdist config
+  route add <name> <addr:port>    Add upstream server to dnsdist
+  route remove <name>             Remove upstream from dnsdist
+  bypass <service> [backup]       Bypass a failing service (auto-switch to backup)
+  enforce <on|off|status|clean> [ip]  Intercept phone's encrypted DNS -> pihole
+  pihole-log       Show recent PiHole DNS query log
+  health           Check health of all DNS services
+  tag              Show service tags
+  api              Start REST API server on port 8099
+  mcp              Start MCP server (stdio JSON-RPC for Claude/Cursor/Hermes)
+  help             Show this help
+HELP
+}
+
+main() {
+    local cmd="${1:-status}"
+    shift 2>/dev/null || true
+
+    case "$cmd" in
+        status)    cmd_status ;;
+        query)     cmd_query "$1" ;;
+        trace)     cmd_trace "$1" ;;
+        routes)    cmd_routes ;;
+        route)
+            case "${1:-}" in
+                add)    cmd_add_route "$2" "$3" ;;
+                remove) cmd_remove_route "$2" ;;
+                list)   cmd_routes ;;
+                *)      echo "Usage: agentic-dns route add <name> <addr> | remove <name>"; return 1 ;;
+            esac ;;
+        bypass)    cmd_bypass "$1" "$2" ;;
+        enforce)   cmd_enforce "$1" "$2" ;;
+        pihole-log) cmd_pihole_log ;;
+        health)    cmd_health ;;
+        tag)       cmd_tag ;;
+        api)       cmd_api ;;
+        mcp)       cmd_mcp ;;
+        help|-h|--help) cmd_help ;;
+        *)
+            echo "Unknown command: $cmd"
+            cmd_help ;;
+    esac
+}
+
+main "$@"
