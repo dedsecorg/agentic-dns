@@ -1,0 +1,36 @@
+{
+  "name": "agentic-dns",
+  "version": "1.5.0",
+  "description": "POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems",
+  "main": "bin/agentic-dns",
+  "bin": {
+    "agentic-dns": "bin/agentic-dns"
+  },
+  "scripts": {
+    "test": "./tests/test_cli.sh",
+    "mcp": "bin/agentic-dns mcp"
+  },
+  "keywords": [
+    "dns",
+    "agentic-ai",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "cursor",
+    "hermes-agent",
+    "pihole",
+    "coredns",
+    "dnsdist",
+    "unbound"
+  ],
+  "author": "dedsecorg",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dedsecorg/agentic-dns.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dedsecorg/agentic-dns/issues"
+  },
+  "homepage": "https://github.com/dedsecorg/agentic-dns#readme"
+}

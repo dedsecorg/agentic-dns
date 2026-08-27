@@ -3,7 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI Status](https://github.com/dedsecorg/agentic-dns/workflows/CI/badge.svg)](https://github.com/dedsecorg/agentic-dns/actions)
 [![Protocol: MCP](https://img.shields.io/badge/MCP-JSON--RPC-success.svg)](docs/MCP_GUIDE.md)
-[![Release](https://img.shields.io/badge/Release-v1.2.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
+[![Docker: GHCR](https://img.shields.io/badge/Docker-GHCR-blue.svg)](https://github.com/dedsecorg/agentic-dns/pkgs/container/agentic-dns)
+[![Release](https://img.shields.io/badge/Release-v1.5.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
 
 > POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems (Claude, Cursor, Windsurf, Hermes Agent, Copilot).
 
@@ -11,10 +12,21 @@
 
 ---
 
-## Quick 1-Line Installation
+## Quick Installation Options
 
+### Option 1: 1-Line Script (Linux / macOS)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dedsecorg/agentic-dns/main/install.sh | bash
+```
+
+### Option 2: Docker Container (GHCR)
+```bash
+docker run -d --net=host ghcr.io/dedsecorg/agentic-dns:latest
+```
+
+### Option 3: Node.js / npx Package
+```bash
+npx agentic-dns status
 ```
 
 ---
