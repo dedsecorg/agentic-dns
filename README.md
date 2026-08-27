@@ -11,7 +11,7 @@
 
 ---
 
-## ⚡ Quick 1-Line Installation
+## Quick 1-Line Installation
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dedsecorg/agentic-dns/main/install.sh | bash
@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/dedsecorg/agentic-dns/main/install.
 
 ---
 
-## 🚀 60-Second AI Agent Onboarding
+## 60-Second AI Agent Onboarding
 
 `agentic-dns` provides out-of-the-box MCP JSON-RPC protocol support for AI agents.
 
@@ -52,7 +52,7 @@ Run `hermes mcp add agentic-dns agentic-dns mcp`.
 
 ---
 
-## 💡 Example AI Assistant Prompts
+## Example AI Assistant Prompts
 
 Once connected, ask your AI coding assistant:
 
