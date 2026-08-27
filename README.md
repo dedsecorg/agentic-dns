@@ -1,19 +1,76 @@
 # agentic-dns
 
-> POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI Status](https://github.com/dedsecorg/agentic-dns/workflows/CI/badge.svg)](https://github.com/dedsecorg/agentic-dns/actions)
+[![Protocol: MCP](https://img.shields.io/badge/MCP-JSON--RPC-success.svg)](docs/MCP_GUIDE.md)
+[![Release](https://img.shields.io/badge/Release-v1.2.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
 
-`agentic-dns` is a zero-dependency, ultra-fast DNS orchestration tool written in pure Bash. Designed for local dev environments, Kubernetes nodes, and AI agents, it manages multi-tier DNS chains (`pihole` -> `coredns` -> `dnsdist` -> `unbound` -> `dnscrypt` -> `VPN DNS`), executes live hop-by-hop packet traces (`trace`), auto-bypasses failing upstreams (`bypass`), and exposes a stdio Model Context Protocol (MCP JSON-RPC) server for AI coding assistants.
+> POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems (Claude, Cursor, Windsurf, Hermes Agent, Copilot).
+
+`agentic-dns` is a zero-dependency, ultra-fast DNS orchestration engine written in pure Bash and Rust. Designed for developer workstations, homelabs, Kubernetes nodes, and autonomous AI agents, it manages multi-tier DNS chains (`pihole` -> `coredns` -> `dnsdist` -> `unbound` -> `dnscrypt` -> `VPN DNS`), executes live hop-by-hop packet traces (`trace`), auto-bypasses failing upstreams (`bypass`), and exposes a stdio Model Context Protocol (MCP JSON-RPC) server for AI coding assistants.
+
+---
+
+## ⚡ Quick 1-Line Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dedsecorg/agentic-dns/main/install.sh | bash
+```
+
+---
+
+## 🚀 60-Second AI Agent Onboarding
+
+`agentic-dns` provides out-of-the-box MCP JSON-RPC protocol support for AI agents.
+
+### 1. Claude Code
+```bash
+claude mcp add agentic-dns agentic-dns mcp
+```
+
+### 2. Cursor / Windsurf / Copilot
+Add to your project or user `.mcp.json` file:
+```json
+{
+  "mcpServers": {
+    "agentic-dns": {
+      "command": "agentic-dns",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "PIHOLE_HOST": "127.0.0.1",
+        "AGENTIC_DNS_API_PORT": "8099"
+      }
+    }
+  }
+}
+```
+
+### 3. Hermes Agent
+Run `hermes mcp add agentic-dns agentic-dns mcp`.
+
+---
+
+## 💡 Example AI Assistant Prompts
+
+Once connected, ask your AI coding assistant:
+
+- *"Check if any local DNS resolvers in the chain are down or unhealthy."*
+- *"Trace the packet path for github.com across loopback and outbound interfaces."*
+- *"Bypass stubby and route DNS traffic through unbound."*
+- *"Show recent Pi-hole query statistics from SQLite."*
 
 ---
 
 ## Key Features
 
-- **Zero External Dependencies**: Pure POSIX Bash + core Unix utilities (`dig`, `ss`, `tcpdump`, `nft`, `sqlite3`, `socat`, `jq`). Zero memory footprint when idle and sub-10ms CLI response times.
-- **Native AI Agent Integration**: Stdio MCP JSON-RPC protocol server out of the box. Connects directly to Claude Code, Cursor, Windsurf, Hermes Agent, and Copilot.
-- **Live Inter-Service Tracing (`trace`)**: Runs simultaneous background `tcpdump` captures across loopback and network interfaces to visualize packet hop progression and latency delays.
+- **Zero External Dependencies**: Core POSIX Bash execution + standard Unix tools (`dig`, `ss`, `tcpdump`, `nft`, `sqlite3`, `socat`, `jq`). Zero idle RAM usage.
+- **Native Model Context Protocol (MCP)**: Exposes `dns_status`, `dns_query`, `dns_trace`, `dns_health`, `dns_routes`, `dns_pihole_log`, and `dns_bypass` to AI agents.
+- **Live Inter-Service Tracing (`trace`)**: Runs background `tcpdump` captures across loopback and network interfaces to visualize packet hop progression and latency bottlenecks.
 - **Automated Failover (`bypass`)**: Dynamically rewrites `dnsdist` configuration and reloads routing daemons to bypass failing resolvers in milliseconds.
 - **Encrypted DNS Interception (`enforce`)**: Applies non-destructive `nftables` rules to redirect Private DNS (DoT port 853) and drop Google DoQ (UDP/443).
-- **REST HTTP API**: Exposes a lightweight local HTTP server on port 8099 for webhooks and integration workflows.
+- **High-Performance Rust Server (`agentic-dns-server`)**: Includes `server/` crate for DoT/DoH proxy handling and REST telemetry.
 
 ---
 
@@ -42,89 +99,30 @@ unbound (:5335)   dnscrypt-proxy (:5354) / stubby (:5360)
 
 ---
 
-## Installation
+## CLI Command Quick Reference
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/agentic-dns.git
-cd agentic-dns
-
-# Make binary executable and link to PATH
-sudo cp bin/agentic-dns /usr/local/bin/agentic-dns
-sudo chmod +x /usr/local/bin/agentic-dns
-```
-
----
-
-## CLI Usage
-
-### 1. View Service Status & Active Chain
-```bash
+# View active DNS chain status and listening ports
 agentic-dns status
-```
-Output:
-```
-DNS Service Status:
-Service            Address                   Type             Status       Listening
--------            -------                   ----             ------       ---------
-pihole             127.0.0.1:53              forwarder        up           YES
-coredns            127.0.0.1:5352            split-horizon    up           YES
-dnsdist            127.0.0.1:5330            loadbalancer     up           YES
-unbound            127.0.0.1:5335            resolver         up           YES
-stubby             127.0.0.1:5360            dot-proxy        up           YES
-dnscrypt           127.0.0.1:5354            doh-proxy        up           YES
-```
 
-### 2. Live Hop-by-Hop Packet Trace
-```bash
+# Execute live inter-service packet trace
 agentic-dns trace google.com
-```
 
-### 3. Automatic Failover Bypass
-```bash
+# Failover failing service to backup
 agentic-dns bypass stubby unbound
-```
 
-### 4. Direct Query & Telemetry
-```bash
-agentic-dns query github.com
-agentic-dns pihole-log
+# Check health of all DNS listeners
 agentic-dns health
+
+# View Pi-hole query logs
+agentic-dns pihole-log
+
+# Start REST API server on port 8099
+agentic-dns api
+
+# Start stdio MCP JSON-RPC Server
+agentic-dns mcp
 ```
-
----
-
-## MCP Server Integration for AI Agents
-
-`agentic-dns` includes a stdio MCP server for AI coding assistants (Claude Code, Cursor, Windsurf, Hermes, Copilot).
-
-Add to your `.mcp.json` or agent configuration:
-
-```json
-{
-  "mcpServers": {
-    "agentic-dns": {
-      "command": "/usr/local/bin/agentic-dns",
-      "args": [
-        "mcp"
-      ],
-      "env": {
-        "PIHOLE_HOST": "127.0.0.1",
-        "AGENTIC_DNS_API_PORT": "8099"
-      }
-    }
-  }
-}
-```
-
-Available MCP Tools exposed to AI agents:
-- `dns_status` - Query live service status and active chain.
-- `dns_query` - Resolve domain through the pipeline.
-- `dns_trace` - Execute packet capture trace across inter-service hops.
-- `dns_health` - Execute health check sweeps.
-- `dns_routes` - List current dnsdist routing rules.
-- `dns_pihole_log` - Query SQLite query logs.
-- `dns_bypass` - Auto-switch traffic away from broken upstreams.
 
 ---
 
