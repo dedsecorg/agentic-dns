@@ -4,6 +4,7 @@
 [![CI Status](https://github.com/dedsecorg/agentic-dns/workflows/CI/badge.svg)](https://github.com/dedsecorg/agentic-dns/actions)
 [![Protocol: MCP](https://img.shields.io/badge/MCP-JSON--RPC-success.svg)](docs/MCP_GUIDE.md)
 [![Docker: GHCR](https://img.shields.io/badge/Docker-GHCR-blue.svg)](https://github.com/dedsecorg/agentic-dns/pkgs/container/agentic-dns)
+[![GitHub Stars](https://img.shields.io/github/stars/dedsecorg/agentic-dns?style=flat&color=yellow)](https://github.com/dedsecorg/agentic-dns/stargazers)
 [![Release](https://img.shields.io/badge/Release-v1.5.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
 
 > POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems (Claude, Cursor, Windsurf, Hermes Agent, Copilot).
