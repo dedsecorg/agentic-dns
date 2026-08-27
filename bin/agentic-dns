@@ -13,6 +13,7 @@ if [ -z "$PIHOLE_API_KEY" ]; then
 fi
 API_PORT="${AGENTIC_DNS_API_PORT:-8099}"
 VPN_DNS="${VPN_DNS:-}"
+SERVER_BIN="${AGENTIC_DNS_SERVER_BIN:-agentic-dns-server}"
 
 # --- Dynamic discovery of VPN DNS ---
 discover_vpn_dns() {
@@ -436,6 +437,15 @@ MCP_RESP
     done
 }
 
+cmd_server() {
+    if ! command -v "$SERVER_BIN" >/dev/null 2>&1; then
+        echo "Rust server binary not found: $SERVER_BIN" >&2
+        echo "Build it with: cargo build --release --manifest-path server/Cargo.toml" >&2
+        return 1
+    fi
+    exec "$SERVER_BIN" "$@"
+}
+
 cmd_help() {
     cat << 'HELP'
 agentic-dns: Agentic AI-Native DNS Routing & Telemetry Tool
@@ -456,6 +466,7 @@ Commands:
   tag              Show service tags
   api              Start REST API server on port 8099
   mcp              Start MCP server (stdio JSON-RPC for Claude/Cursor/Hermes)
+  server [options] Start the Rust API/DoT proxy server
   help             Show this help
 HELP
 }
@@ -483,6 +494,7 @@ main() {
         tag)       cmd_tag ;;
         api)       cmd_api ;;
         mcp)       cmd_mcp ;;
+        server)    cmd_server "$@" ;;
         help|-h|--help) cmd_help ;;
         *)
             echo "Unknown command: $cmd"
