@@ -1,0 +1,1 @@
+{"rustc_fingerprint":11140084047154427160,"outputs":{"17228521274749693413":{"success":true,"status":"","code":0,"stdout":"rustc 1.98.0 (88d9e12ae 2026-08-18)\nbinary: rustc\ncommit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea\ncommit-date: 2026-08-18\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.0\nLLVM version: 22.1.8\n","stderr":""}},"successes":{}}
