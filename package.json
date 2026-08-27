@@ -6,6 +6,15 @@
   "bin": {
     "agentic-dns": "bin/agentic-dns"
   },
+  "files": [
+    "bin/agentic-dns",
+    "README.md",
+    "LICENSE",
+    "docs/MCP_GUIDE.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "./tests/test_cli.sh",
     "mcp": "bin/agentic-dns mcp"
