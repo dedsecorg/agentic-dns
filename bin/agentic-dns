@@ -366,7 +366,7 @@ cmd_mcp() {
         
         local method req_id
         method=$(echo "$line" | jq -r '.method // empty' 2>/dev/null)
-        req_id=$(echo "$line" | jq -r '.id // 1' 2>/dev/null)
+        req_id=$(echo "$line" | jq -c '.id // 1' 2>/dev/null)
         
         case "$method" in
             "initialize")
