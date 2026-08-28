@@ -358,8 +358,8 @@ cmd_api() {
 }
 
 cmd_mcp() {
-    log "Starting agentic-dns MCP server (JSON-RPC over stdio)..." >&2
-    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log" >&2
+    log "Starting agentic-dns MCP server (JSON-RPC over stdio)..."
+    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log"
     
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
