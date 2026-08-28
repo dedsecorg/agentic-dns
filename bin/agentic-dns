@@ -370,7 +370,9 @@ cmd_mcp() {
         
         case "$method" in
             "initialize")
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}\n' "$req_id"
+                local proto
+                proto=$(echo "$line" | jq -c '.params.protocolVersion // "2024-11-05"' 2>/dev/null)
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%s,"capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}\n' "$req_id" "$proto"
                 ;;
             "notifications/initialized"|"notifications/"*)
                 ;;
