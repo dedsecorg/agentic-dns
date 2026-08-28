@@ -54,7 +54,7 @@ SERVICES=(
 )
 
 # ---- Helper functions ----
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
+log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
 is_listening() {
     local addr="$1" port="$2"
@@ -359,28 +359,29 @@ cmd_api() {
 
 cmd_mcp() {
     log "Starting agentic-dns MCP server (JSON-RPC over stdio)..."
-    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_add_route, dns_remove_route, dns_bypass, dns_pihole_log"
+    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log"
     
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         
         local method req_id
         method=$(echo "$line" | jq -r '.method // empty' 2>/dev/null)
-        req_id=$(echo "$line" | jq -r '.id // 1' 2>/dev/null)
+        req_id=$(echo "$line" | jq -c '.id // 1' 2>/dev/null)
         
         case "$method" in
+            "initialize")
+                local proto
+                proto=$(echo "$line" | jq -c '.params.protocolVersion // "2024-11-05"' 2>/dev/null)
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%s,"capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}\n' "$req_id" "$proto"
+                ;;
+            "notifications/initialized"|"notifications/"*)
+                ;;
+            "ping")
+                # MCP liveness ping: respond with an empty result object.
+                printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$req_id"
+                ;;
             "tools/list")
-                cat << MCP_RESP
-{"jsonrpc":"2.0","id":${req_id},"result":{"tools":[
-{"name":"dns_status","description":"Show status of all DNS services"},
-{"name":"dns_query","description":"Query a domain through the DNS chain","input":{"domain":"string"}},
-{"name":"dns_trace","description":"Trace DNS path with packet capture","input":{"domain":"string"}},
-{"name":"dns_health","description":"Check health of all DNS services"},
-{"name":"dns_routes","description":"List current routing rules"},
-{"name":"dns_pihole_log","description":"Show recent PiHole query log"},
-{"name":"dns_bypass","description":"Bypass a failing DNS service","input":{"service":"string","backup":"string"}}
-]}}
-MCP_RESP
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}}]}}\n' "$req_id"
                 ;;
             "tools/call")
                 local tool domain service backup
@@ -396,9 +397,9 @@ MCP_RESP
                         echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
                         ;;
                     "dns_query")
-                        local result
-                        result=$(dns_query "$domain")
-                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"${result}\"}]}}"
+                        local out
+                        out=$(dns_query "$domain" 2>&1)
+                        echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
                         ;;
                     "dns_trace")
                         local out
