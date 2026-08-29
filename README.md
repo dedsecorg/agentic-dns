@@ -1,15 +1,41 @@
 # agentic-dns
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI Status](https://github.com/dedsecorg/agentic-dns/workflows/CI/badge.svg)](https://github.com/dedsecorg/agentic-dns/actions)
-[![Protocol: MCP](https://img.shields.io/badge/MCP-JSON--RPC-success.svg)](docs/MCP_GUIDE.md)
-[![Docker: GHCR](https://img.shields.io/badge/Docker-GHCR-blue.svg)](https://github.com/dedsecorg/agentic-dns/pkgs/container/agentic-dns)
-[![GitHub Stars](https://img.shields.io/github/stars/dedsecorg/agentic-dns?style=flat&color=yellow)](https://github.com/dedsecorg/agentic-dns/stargazers)
-[![Release](https://img.shields.io/badge/Release-v1.5.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![CI Status](https://github.com/dedsecorg/agentic-dns/workflows/CI/badge.svg)](https://github.com/dedsecorg/agentic-dns/actions) [![Protocol: MCP](https://img.shields.io/badge/MCP-JSON--RPC-success.svg)](docs/MCP_GUIDE.md) [![Docker: GHCR](https://img.shields.io/badge/Docker-GHCR-blue.svg)](https://github.com/dedsecorg/agentic-dns/pkgs/container/agentic-dns) [![GitHub Stars](https://img.shields.io/github/stars/dedsecorg/agentic-dns?style=flat&color=yellow)](https://github.com/dedsecorg/agentic-dns/stargazers) [![Release](https://img.shields.io/badge/Release-v1.5.0-blue)](https://github.com/dedsecorg/agentic-dns/releases)
 
-> POSIX-Native DNS Routing, Diagnostic, and Telemetry Engine for Agentic AI Systems (Claude, Cursor, Windsurf, Hermes Agent, Copilot).
+Local agentic DNS stack combining Pi-hole, CoreDNS, dnsdist, and Unbound with an MCP-compatible stdio server for programmatic control.
 
-`agentic-dns` is a zero-dependency, ultra-fast DNS orchestration engine written in pure Bash and Rust. Designed for developer workstations, homelabs, Kubernetes nodes, and autonomous AI agents, it manages multi-tier DNS chains (`pihole` -> `coredns` -> `dnsdist` -> `unbound` -> `dnscrypt` -> `VPN DNS`), executes live hop-by-hop packet traces (`trace`), auto-bypasses failing upstreams (`bypass`), and exposes a stdio Model Context Protocol (MCP JSON-RPC) server for AI coding assistants.
+---
+
+## Machine-friendly summary
+
+```
+Name: agentic-dns
+URL: https://github.com/dedsecorg/agentic-dns
+ShortDescription: Local agentic DNS stack combining Pi-hole, CoreDNS, dnsdist, and Unbound with an MCP-compatible stdio server for programmatic control.
+Keywords: agentic-dns, mcp, dns, pi-hole, coredns, dnsdist, unbound, selfhosted, dns-middleware
+EntryPoint: ./target/release/agentic-dns
+Install:
+  - git clone https://github.com/dedsecorg/agentic-dns.git
+  - ./install.sh
+CLIExamples:
+  - Start: agentic-dns start --config /etc/agentic-dns/config.yml
+  - Status: agentic-dns status
+MCP:
+  - protocol: stdio
+  - capabilities: dns-query,dns-blocklist,pcap-monitor,nftables-manage
+  - control-endpoint: stdio
+  - example-config-snippet: |
+      mcp:
+        name: agentic-dns
+        protocol: stdio
+        command: ["./agentic-dns","--mcp"]
+Maintainer:
+  - name: dedsecorg
+  - contact: https://github.com/dedsecorg
+License: MIT
+ReleaseTag: v0.1.0
+Notes: Exposes MCP features for query/response and local firewall integration. See README.md for full architecture and network requirements.
+```
 
 ---
 
@@ -87,6 +113,23 @@ Once connected, ask your AI coding assistant:
 
 ---
 
+## MCP configuration
+
+```yaml
+mcp:
+  name: agentic-dns
+  protocol: stdio
+  command: ["./agentic-dns","--mcp"]
+  capabilities:
+    - dns-query
+    - dns-blocklist
+    - pcap-monitor
+    - nftables-manage
+  version: 1.0
+```
+
+---
+
 ## 6-Tier Architecture Pipeline
 
 ```
@@ -104,10 +147,10 @@ Once connected, ask your AI coding assistant:
    +--------+--------+
    |                 |
    v                 v
-unbound (:5335)   dnscrypt-proxy (:5354) / stubby (:5360)
+ unbound (:5335)   dnscrypt-proxy (:5354) / stubby (:5360)
    |                 |
    v                 v
-[VPN / Upstream]  [DoH / DoT Cloud Upstreams]
+ [VPN / Upstream]  [DoH / DoT Cloud Upstreams]
 ```
 
 ---
@@ -136,6 +179,12 @@ agentic-dns api
 # Start stdio MCP JSON-RPC Server
 agentic-dns mcp
 ```
+
+---
+
+## Tags / Keywords
+
+agentic-dns, mcp, dns, pi-hole, coredns, dnsdist, unbound, selfhosted
 
 ---
 
