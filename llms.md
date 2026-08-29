@@ -10,15 +10,15 @@ ShortDescription: Local agentic DNS stack combining Pi-hole, CoreDNS, dnsdist, a
 
 Keywords: agentic-dns, mcp, dns, pi-hole, coredns, dnsdist, unbound, selfhosted, dns-middleware
 
-EntryPoint: ./target/release/agentic-dns
+EntryPoint: bin/agentic-dns
 
 Install:
 - git clone https://github.com/dedsecorg/agentic-dns.git
 - ./install.sh
 
 CLI Examples:
-- Start: `agentic-dns start --config /etc/agentic-dns/config.yml`
-- Status: `agentic-dns status`
+- MCP server (stdio JSON-RPC): `agentic-dns mcp`
+- REST API server: `agentic-dns api`
 
 ## MCP Configuration (example)
 
@@ -26,12 +26,15 @@ CLI Examples:
 mcp:
   name: agentic-dns
   protocol: stdio
-  command: ["./agentic-dns","--mcp"]
+  command: ["agentic-dns","mcp"]
   capabilities:
-    - dns-query
-    - dns-blocklist
-    - pcap-monitor
-    - nftables-manage
+    - dns_status
+    - dns_query
+    - dns_trace
+    - dns_health
+    - dns_routes
+    - dns_pihole_log
+    - dns_bypass
   version: 1.0
 ```
 

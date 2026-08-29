@@ -13,27 +13,27 @@ Name: agentic-dns
 URL: https://github.com/dedsecorg/agentic-dns
 ShortDescription: Local agentic DNS stack combining Pi-hole, CoreDNS, dnsdist, and Unbound with an MCP-compatible stdio server for programmatic control.
 Keywords: agentic-dns, mcp, dns, pi-hole, coredns, dnsdist, unbound, selfhosted, dns-middleware
-EntryPoint: ./target/release/agentic-dns
+EntryPoint: bin/agentic-dns
 Install:
   - git clone https://github.com/dedsecorg/agentic-dns.git
   - ./install.sh
 CLIExamples:
-  - Start: agentic-dns start --config /etc/agentic-dns/config.yml
-  - Status: agentic-dns status
+  - MCP: agentic-dns mcp
+  - API: agentic-dns api
 MCP:
   - protocol: stdio
-  - capabilities: dns-query,dns-blocklist,pcap-monitor,nftables-manage
+  - capabilities: dns_status,dns_query,dns_trace,dns_health,dns_routes,dns_pihole_log,dns_bypass
   - control-endpoint: stdio
   - example-config-snippet: |
       mcp:
         name: agentic-dns
         protocol: stdio
-        command: ["./agentic-dns","--mcp"]
+        command: ["agentic-dns","mcp"]
 Maintainer:
   - name: dedsecorg
   - contact: https://github.com/dedsecorg
 License: MIT
-ReleaseTag: v0.1.0
+ReleaseTag: v1.5.0
 Notes: Exposes MCP features for query/response and local firewall integration. See README.md for full architecture and network requirements.
 ```
 
@@ -119,12 +119,15 @@ Once connected, ask your AI coding assistant:
 mcp:
   name: agentic-dns
   protocol: stdio
-  command: ["./agentic-dns","--mcp"]
+  command: ["agentic-dns","mcp"]
   capabilities:
-    - dns-query
-    - dns-blocklist
-    - pcap-monitor
-    - nftables-manage
+    - dns_status
+    - dns_query
+    - dns_trace
+    - dns_health
+    - dns_routes
+    - dns_pihole_log
+    - dns_bypass
   version: 1.0
 ```
 
@@ -158,6 +161,12 @@ mcp:
 ## CLI Command Quick Reference
 
 ```bash
+# Start stdio MCP JSON-RPC Server
+agentic-dns mcp
+
+# Start REST API server on port 8099
+agentic-dns api
+
 # View active DNS chain status and listening ports
 agentic-dns status
 
@@ -173,11 +182,8 @@ agentic-dns health
 # View Pi-hole query logs
 agentic-dns pihole-log
 
-# Start REST API server on port 8099
-agentic-dns api
-
-# Start stdio MCP JSON-RPC Server
-agentic-dns mcp
+# Start the Rust API/DoT proxy server (if built)
+agentic-dns server
 ```
 
 ---
