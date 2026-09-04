@@ -1,0 +1,7 @@
+# Smithery registry manifest — registers this stdio MCP server in the global Smithery index.
+# Run `smithery mcp publish` after pushing this file to auto-register.
+startCommand:
+  type: stdio
+  config:
+    command: agentic-dns
+    args: ["mcp"]
