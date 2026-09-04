@@ -1,0 +1,11 @@
+# Rust build artifacts
+/server/target/
+**/*.rs.bk
+
+# OS/editor noise
+.DS_Store
+*.log
+
+# Local config (never commit real credentials)
+/etc/agentic-dns/config.toml
+.env
