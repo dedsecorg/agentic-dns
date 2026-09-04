@@ -1,0 +1,42 @@
+# Publishes the smithery.yaml MCP manifest to the Smithery registry
+# whenever a new GitHub Release is published. Requires SMITHERY_API_KEY
+# repository secret (generate at smithery.ai -> account settings -> tokens).
+name: Publish to Smithery
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify smithery.yaml presence
+        run: |
+          if [ ! -f "smithery.yaml" ]; then
+            echo "Error: smithery.yaml not found in repository root."
+            exit 1
+          fi
+
+      - name: Install Smithery CLI and Publish
+        env:
+          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+        run: |
+          if [ -z "$SMITHERY_API_KEY" ]; then
+            echo "Error: SMITHERY_API_KEY secret is not set."
+            exit 1
+          fi
+          npx -y @smithery/cli@latest publish --key "$SMITHERY_API_KEY"
