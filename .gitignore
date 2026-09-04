@@ -1,0 +1,14 @@
+# Secrets
+.env
+.env.*
+!/env.example
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+
+# Build / cache (Rust cargo)
+server/target/
+Cargo.lock
