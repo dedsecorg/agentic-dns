@@ -1,0 +1,13 @@
+# Smithery configuration: https://smithery.ai/docs/config#smitheryyaml
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties: {}
+    description: Deterministic POSIX DNS interceptor. Exposes MCP tools (dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_pihole_log, dns_bypass) over stdio JSON-RPC.
+  commandFunction: |-
+    (config) => ({
+      command: 'agentic-dns',
+      args: ['mcp']
+    })
+  exampleConfig: {}

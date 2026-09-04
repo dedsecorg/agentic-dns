@@ -142,3 +142,37 @@ agentic-dns mcp
 ## License
 
 [MIT License](LICENSE) - Free and Open Source.
+
+## Contributing
+
+`agentic-dns` is a Bash-plus-Rust project. Contributions are welcome and are
+reviewed promptly.
+
+1. Fork the repository and create a feature branch.
+2. For Rust changes, use `rustfmt`; for Bash changes, follow `shellcheck` or
+   run `bash -n` on edited files.
+3. Add or update tests under `tests/`. The suite runs in CI on every PR.
+4. Open a pull request with a clear description of the problem solved and the
+   approach taken.
+
+To run the test suite locally:
+
+```bash
+bash tests/test_cli.sh
+```
+
+By contributing you agree that your changes are redistributable under the same
+MIT license, that you have the right to license them, and that they do not
+introduce security-sensitive material (private IPs, API tokens, or keys).
+
+---
+
+## Installation via Smithery
+
+Install the MCP server directly into Claude Desktop, Cursor, or other Smithery-supported clients:
+
+```bash
+npx -y @smithery/cli install @dedsecorg/agentic-dns
+```
+
+This provisions `agentic-dns` with the correct `mcp` argument automatically.
