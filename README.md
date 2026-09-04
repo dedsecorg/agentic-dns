@@ -164,3 +164,15 @@ bash tests/test_cli.sh
 By contributing you agree that your changes are redistributable under the same
 MIT license, that you have the right to license them, and that they do not
 introduce security-sensitive material (private IPs, API tokens, or keys).
+
+---
+
+## Installation via Smithery
+
+Install the MCP server directly into Claude Desktop, Cursor, or other Smithery-supported clients:
+
+```bash
+npx -y @smithery/cli install @dedsecorg/agentic-dns
+```
+
+This provisions `agentic-dns` with the correct `mcp` argument automatically.
