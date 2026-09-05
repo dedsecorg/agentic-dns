@@ -1,0 +1,38 @@
+{
+  "name": "agentic-dns",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Guide",
+        "pages": [
+          "index",
+          "installation",
+          "architecture",
+          "dns-chain-services",
+          "commands",
+          "configuration",
+          "vpn-dns-discovery"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "mcp-guide",
+          "rest-api",
+          "phone-dns-interception",
+          "rust-dot-server"
+        ]
+      },
+      {
+        "group": "Deployment",
+        "pages": [
+          "container",
+          "github-pages",
+          "systemd",
+          "smithery"
+        ]
+      }
+    ]
+  }
+}
+EOF 2>&1
