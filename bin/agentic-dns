@@ -41,7 +41,7 @@ discover_vpn_dns() {
 discover_vpn_dns
 
 if [ -z "$VPN_DNS" ]; then
-    VPN_DNS=$(protonvpn status 2>/dev/null | grep -oP 'DNS:\s*\K[0-9.]+' | head -1)
+    VPN_DNS=$(protonvpn status 2>/dev/null | grep -oE 'DNS:\s*\K[0-9.]+' | head -1)
 fi
 
 # Service definitions: name|port|addr|type|upstream
@@ -331,7 +331,7 @@ cmd_enforce() {
             ;;
         off|disable|stop)
             echo "Removing DNS interception rules for $target..."
-            for handle in $(sudo nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oP 'handle \K\d+'); do
+            for handle in $(sudo nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oE 'handle \K\d+'); do
                 sudo nft delete rule ip nat PREROUTING handle "$handle" 2>/dev/null && echo "  [-] Removed nat rule handle $handle"
             done
             ;;
