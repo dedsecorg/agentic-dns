@@ -11,9 +11,8 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-# Copy binaries and configs directly
+# Copy binaries
 COPY bin/ /usr/local/bin/
-COPY etc/ /etc/agentic-dns/
 
 RUN chmod +x /usr/local/bin/*
 
