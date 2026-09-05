@@ -1,0 +1,13 @@
+title: agentic-dns
+description: Agentic AI-Native DNS Routing, Diagnostics & Telemetry
+url: https://dedsecorg.github.io
+baseurl: /agentic-dns
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
