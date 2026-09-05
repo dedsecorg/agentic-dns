@@ -2,6 +2,45 @@
 
 **Agentic AI-Native DNS Routing, Diagnostics & Telemetry.** Manages a complete DNS resolution chain (Pi-hole -> CoreDNS -> dnsdist -> Unbound/Stubby/DNSCrypt -> VPN DNS) with CLI, REST API, stdio MCP, and a Rust DoT/mTLS proxy server. Pure POSIX Bash + standard Unix tools -- zero Python/Node dependencies.
 
+[![Release](https://img.shields.io/github/v/release/dedsecorg/agentic-dns?color=blue&logo=github)](https://github.com/dedsecorg/agentic-dns/releases)
+[![GHCR Image](https://img.shields.io/badge/ghcr.io-dedsecorg%2Fagentic--dns-24292e?logo=docker)](https://github.com/dedsecorg/agentic-dns/pkgs/container/agentic-dns)
+[![Multi-Arch](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-blue)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+### OCI Container (GHCR)
+
+Pre-built multi-architecture images (`linux/amd64`, `linux/arm64`) for ephemeral agent sandboxes and headless runners.
+
+#### Pulling the Image
+
+```bash
+# Pinned release
+docker pull ghcr.io/dedsecorg/agentic-dns:1.6.0
+
+# Moving major release
+docker pull ghcr.io/dedsecorg/agentic-dns:v1
+
+# Latest tracking branch
+docker pull ghcr.io/dedsecorg/agentic-dns:latest
+```
+
+#### Running the Resolver Health & Trace Tools
+
+```bash
+# Quick health check
+docker run --rm \
+  --cap-add=NET_ADMIN \
+  ghcr.io/dedsecorg/agentic-dns:v1 status
+
+# Run trace check against host resolver
+docker run --rm \
+  --cap-add=NET_ADMIN \
+  --network=host \
+  ghcr.io/dedsecorg/agentic-dns:v1 trace api.anthropic.com
+```
+
 ---
 
 ## Why This Exists
