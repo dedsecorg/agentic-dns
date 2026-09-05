@@ -1,0 +1,12 @@
+*.sh linguist-language=Shell
+*.bash linguist-language=Shell
+*.json linguist-language=JSON
+*.json.example linguist-language=JSON
+*.service linguist-language=systemd
+*.md linguist-language=Markdown
+*.txt linguist-language=Text
+*.yaml linguist-language=YAML
+*.toml linguist-language=TOML
+Dockerfile linguist-language=Dockerfile
+LICENSE linguist-language=Text
+LICENSE.md linguist-language=Text
