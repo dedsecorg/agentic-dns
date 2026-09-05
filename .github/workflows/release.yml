@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package Release Assets
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          ARCHIVE_NAME="${{ github.event.repository.name }}-${VERSION}.tar.gz"
+          
+          # Bundle binaries, configs, and licensing into a clean tarball
+          tar -czf "$ARCHIVE_NAME" bin/ etc/ LICENSE README.md docs/MCP_GUIDE.md
+          
+          # Generate SHA256 checksum
+          sha256sum "$ARCHIVE_NAME" > checksums.txt
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "${{ github.event.repository.name }} ${{ github.ref_name }}" \
+            --generate-notes \
+            ${{ github.event.repository.name }}-${{ github.ref_name }}.tar.gz checksums.txt
