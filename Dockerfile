@@ -1,21 +1,21 @@
-FROM debian:bookworm-slim
+FROM alpine:3.20
 
-RUN apt-get update && apt-get install -y \
-    bind9-utils \
+# Install required low-level networking and shell primitives
+RUN apk add --no-cache \
+    bash \
+    coreutils \
     iproute2 \
-    tcpdump \
-    nftables \
-    sqlite3 \
-    socat \
-    jq \
     curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    jq \
+    bind-tools
 
-COPY bin/agentic-dns /usr/local/bin/agentic-dns
-RUN chmod +x /usr/local/bin/agentic-dns
+WORKDIR /app
 
-EXPOSE 8099
+# Copy binaries
+COPY bin/ /usr/local/bin/
 
+RUN chmod +x /usr/local/bin/*
+
+# Set default entrypoint
 ENTRYPOINT ["/usr/local/bin/agentic-dns"]
 CMD ["status"]
