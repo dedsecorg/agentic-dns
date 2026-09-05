@@ -21,7 +21,7 @@ jobs:
           ARCHIVE_NAME="${{ github.event.repository.name }}-${VERSION}.tar.gz"
           
           # Bundle binaries, configs, and licensing into a clean tarball
-          tar -czf "$ARCHIVE_NAME" bin/ etc/ LICENSE README.md docs/MCP_GUIDE.md
+          tar -czf "$ARCHIVE_NAME" bin/ LICENSE README.md docs/MCP_GUIDE.md
           
           # Generate SHA256 checksum
           sha256sum "$ARCHIVE_NAME" > checksums.txt
