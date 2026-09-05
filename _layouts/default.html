@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title | default: site.title }}</title>
+    <link rel="stylesheet" href="{{ '/assets/main.css' | relative_url }}">
+    <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="{{ '/feed.xml' | relative_url }}">
+    {% seo %}
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrapper">
+        <a class="site-title" href="{{ '/' | relative_url }}">{{ site.title }}</a>
+        <nav class="site-nav">
+          <a href="{{ '/docs/' | relative_url }}">Documentation</a>
+          <a href="https://github.com/dedsecorg/agentic-dns">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        {{ content }}
+      </div>
+    </main>
+    <footer class="site-footer">
+      <div class="wrapper">
+        <p>{{ site.description }}</p>
+      </div>
+    </footer>
+    <script src="https://context7.com/widget.js" data-library="/dedsecorg/agentic-dns" data-color="#059669" data-position="bottom-right"></script>
+  </body>
+</html>
+EOF 2>&1
