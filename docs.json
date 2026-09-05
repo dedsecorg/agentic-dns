@@ -1,5 +1,6 @@
 {
   "name": "agentic-dns",
+  "theme": "mint",
   "navigation": {
     "groups": [
       {
@@ -35,3 +36,4 @@
     ]
   }
 }
+EOF 2>&1
