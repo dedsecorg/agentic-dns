@@ -1,0 +1,16 @@
+{
+  "commands": [
+    {
+      "name": "lint",
+      "run": "shellcheck -x -S error ./install.sh ./bin/agentic-dns"
+    },
+    {
+      "name": "test",
+      "run": "./bin/agentic-dns status"
+    }
+  ],
+  "validation": {
+    "sidecarImage": "cimg-base:2026.04"
+  },
+  "orgID": "562a0143-40f2-4f2e-8769-15de87090c68"
+}
