@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 dedsecorg
 # agentic-dns One-Command Installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/dedsecorg/agentic-dns/main/install.sh | bash
 

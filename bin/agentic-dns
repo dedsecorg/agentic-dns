@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 dedsecorg
 # agentic-dns: Agentic AI-Native DNS Routing, Diagnostic, & Telemetry Tool
 # Manages: Pi-hole, CoreDNS, dnsdist, Unbound, Stubby, DNSCrypt-Proxy, VPN DNS
 # Provides: CLI, REST API, stdio MCP JSON-RPC Server
