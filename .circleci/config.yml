@@ -1,8 +1,5 @@
 version: 2.1
 
-orbs:
-  shellcheck: circleci/shellcheck@3.0.0
-
 jobs:
   lint:
     docker:
