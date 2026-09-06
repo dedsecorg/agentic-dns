@@ -30,11 +30,8 @@ discover_vpn_dns() {
         fi
     fi
     
-    if command -v wg >/dev/null 2>&1; then
-        local wg_dns
-        wg_dns=$(wg show wg0 2>/dev/null | grep "allowed ips" | head -1)
-    fi
-    
+    # WireGuard holds no DNS metadata in kernel space (`wg show` only exposes
+    # peers/allowed-ips); DNS must come from userspace config (nmcli/protonvpn).
     return 0
 }
 
