@@ -6,6 +6,10 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
+# Already in the dependency graph via axum (same versions/features); declared
+# directly so the mTLS API listener can drive HTTP/1 over a tokio-rustls stream.
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "service"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }

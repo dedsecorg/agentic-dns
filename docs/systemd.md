@@ -46,7 +46,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/agentic-dns-server
+ExecStart=/usr/local/bin/agentic-dns-server --dot-proxy
 Restart=on-failure
 RestartSec=5
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

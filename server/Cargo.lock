@@ -8,6 +8,8 @@ version = "1.1.0"
 dependencies = [
  "axum",
  "clap",
+ "hyper",
+ "hyper-util",
  "reqwest",
  "rustls",
  "rustls-pemfile",

@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::io::{self, BufRead};
 use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::StatusCode,
     response::Json,
     routing::get,
@@ -219,8 +220,9 @@ fn get_chain() -> Vec<String> {
 }
 
 // ---- API Handlers ----
-async fn api_status(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
-    let config = load_config("/etc/agentic-dns/config.toml");
+type SharedConfig = Arc<AppConfig>;
+
+async fn api_status(State(config): State<SharedConfig>) -> (StatusCode, Json<Value>) {
     let services = discover_services(&config);
     let chain = get_chain();
     (StatusCode::OK, Json(json!({
@@ -230,8 +232,7 @@ async fn api_status(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Js
     })))
 }
 
-async fn api_health(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
-    let config = load_config("/etc/agentic-dns/config.toml");
+async fn api_health(State(config): State<SharedConfig>) -> (StatusCode, Json<Value>) {
     let services = discover_services(&config);
     let all_healthy = services.iter().all(|s| s["status"] == "up");
     (StatusCode::OK, Json(json!({
@@ -257,9 +258,8 @@ async fn api_query(Query(params): Query<HashMap<String, String>>) -> (StatusCode
     })))
 }
 
-async fn api_trace(Query(params): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
+async fn api_trace(State(config): State<SharedConfig>, Query(params): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
     let domain = params.get("domain").cloned().unwrap_or_else(|| "example.com".to_string());
-    let config = load_config("/etc/agentic-dns/config.toml");
     let services = discover_services(&config);
     let chain = get_chain();
     let result = dns_query(&domain, "127.0.0.1", 53);
@@ -271,7 +271,7 @@ async fn api_trace(Query(params): Query<HashMap<String, String>>) -> (StatusCode
     })))
 }
 
-async fn api_pihole(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
+async fn api_pihole() -> (StatusCode, Json<Value>) {
     // PiHole v6 API is minimal; read directly from FTL SQLite database
     let db_path = "/etc/pihole/pihole-FTL.db";
 
@@ -331,7 +331,7 @@ async fn api_pihole(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Js
     })))
 }
 
-async fn api_routes(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
+async fn api_routes() -> (StatusCode, Json<Value>) {
     let output = Command::new("grep")
         .args(["-n", "newServer", "/etc/dnsdist/dnsdist.conf"])
         .output();
@@ -343,15 +343,15 @@ async fn api_routes(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Js
 }
 
 // ---- Health Monitor ----
-async fn run_health_monitor() {
-    let mut check_interval = interval(Duration::from_secs(5));
+async fn run_health_monitor(config: SharedConfig) {
+    let secs = config.health_check_interval_secs.max(1);
+    let mut check_interval = interval(Duration::from_secs(secs));
     let mut last_status: HashMap<String, String> = HashMap::new();
 
-    println!("Health monitor started (5s interval)");
+    println!("Health monitor started ({}s interval)", secs);
 
     loop {
         check_interval.tick().await;
-        let config = load_config("/etc/agentic-dns/config.toml");
         let services = discover_services(&config);
 
         let mut alerts = vec![];
@@ -412,10 +412,8 @@ async fn run_health_monitor() {
 }
 
 // ---- MCP over stdio ----
-fn run_mcp() {
-    use std::io::{self, BufRead};
+fn run_mcp(config: SharedConfig) {
     let stdin = io::stdin();
-    let config = load_config("/etc/agentic-dns/config.toml");
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -524,14 +522,15 @@ fn run_mcp() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let config: SharedConfig = Arc::new(load_config(&args.config));
 
     if args.mcp {
-        run_mcp();
+        run_mcp(config);
         return Ok(());
     }
 
     if args.monitor {
-        run_health_monitor().await;
+        run_health_monitor(config).await;
         return Ok(());
     }
 
@@ -547,18 +546,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/query", get(api_query))
         .route("/api/v1/trace", get(api_trace))
         .route("/api/v1/pihole", get(api_pihole))
-        .route("/api/v1/routes", get(api_routes));
+        .route("/api/v1/routes", get(api_routes))
+        .with_state(config);
 
-    use axum::serve;
+    let tls = build_mtls_config(&args.cert_file, &args.key_file, &args.client_ca, args.allow_classical_kx)?;
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
     let addr = SocketAddr::from(([0, 0, 0, 0], args.api_port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("agentic-dns API server listening on {}", addr);
+    let kx = if args.allow_classical_kx { "X25519MLKEM768+X25519" } else { "X25519MLKEM768 only" };
+    println!("agentic-dns API server (mTLS, kx: {}) listening on {}", kx, addr);
     println!("Endpoints: /api/v1/status /api/v1/health /api/v1/query /api/v1/trace /api/v1/pihole /api/v1/routes");
     println!("Run with --monitor for health daemon, --mcp for MCP server");
 
-    serve(listener, app).await?;
-
-    Ok(())
+    loop {
+        let (stream, peer) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("API accept error: {} (retrying)", e);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        let acceptor = acceptor.clone();
+        let app = app.clone();
+        tokio::spawn(async move {
+            let tls_stream = match acceptor.accept(stream).await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("API mTLS handshake failed from {}: {}", peer, e);
+                    return;
+                }
+            };
+            let svc = hyper_util::service::TowerToHyperService::new(app);
+            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                .serve_connection(hyper_util::rt::TokioIo::new(tls_stream), svc)
+                .await
+            {
+                eprintln!("API connection error from {}: {}", peer, e);
+            }
+        });
+    }
 }
 
 fn load_pem_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, Box<dyn std::error::Error>> {
