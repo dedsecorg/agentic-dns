@@ -103,19 +103,56 @@ fn load_config(path: &str) -> AppConfig {
 
 fn is_port_listening(port: u16) -> bool {
     let output = Command::new("ss").args(["-tulnp"]).output();
-    if let Ok(out) = output {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        // Column 4 is Local Address:Port; the port is everything after the last ':'
-        // so bracketed/unbracketed IPv6 addresses are handled.
-        for line in stdout.lines().skip(1) {
-            let Some(local) = line.split_whitespace().nth(4) else { continue };
-            let Some((_, p)) = local.rsplit_once(':') else { continue };
-            if p.parse::<u16>().ok() == Some(port) {
-                return true;
-            }
-        }
+    match output {
+        Ok(out) => ss_output_has_port(&String::from_utf8_lossy(&out.stdout), port),
+        Err(_) => false,
     }
-    false
+}
+
+fn ss_output_has_port(ss_output: &str, port: u16) -> bool {
+    // Column 4 is Local Address:Port; the port is everything after the last ':'
+    // so bracketed/unbracketed IPv6 addresses are handled.
+    ss_output.lines().skip(1).any(|line| {
+        line.split_whitespace()
+            .nth(4)
+            .and_then(|local| local.rsplit_once(':'))
+            .and_then(|(_, p)| p.parse::<u16>().ok())
+            == Some(port)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ss_output_has_port;
+
+    const SS: &str = "\
+Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess
+udp   UNCONN 0      0         127.0.0.1:5330       0.0.0.0:*    users:((\"dnsdist\",pid=1,fd=5))
+udp   UNCONN 0      0         127.0.0.1:5352       0.0.0.0:*
+tcp   LISTEN 0      4096           [::]:5354          [::]:*
+tcp   LISTEN 0      4096              *:853             *:*
+garbage line without enough columns
+";
+
+    #[test]
+    fn exact_port_only() {
+        assert!(!ss_output_has_port(SS, 53));
+        assert!(ss_output_has_port(SS, 5330));
+        assert!(ss_output_has_port(SS, 5352));
+    }
+
+    #[test]
+    fn ipv6_and_wildcard_addresses() {
+        assert!(ss_output_has_port(SS, 5354));
+        assert!(ss_output_has_port(SS, 853));
+    }
+
+    #[test]
+    fn header_and_malformed_rows_ignored() {
+        assert!(!ss_output_has_port(SS, 0));
+        assert!(!ss_output_has_port("", 53));
+        assert!(!ss_output_has_port("Netid State Recv-Q Send-Q Local Address:Port\n", 53));
+    }
 }
 
 fn dns_query(domain: &str, addr: &str, port: u16) -> Option<String> {
