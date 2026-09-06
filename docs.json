@@ -1,6 +1,11 @@
 {
   "name": "agentic-dns",
   "theme": "mint",
+  "colors": {
+    "primary": "#00d084",
+    "light": "#00d084",
+    "dark": "#00d084"
+  },
   "navigation": {
     "groups": [
       {
