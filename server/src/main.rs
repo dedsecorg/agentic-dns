@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io::BufRead;
 use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::Arc;
@@ -35,6 +34,15 @@ struct Args {
     cert_file: String,
     #[arg(long, default_value = "/etc/agentic-dns/certs/dot.key")]
     key_file: String,
+    /// CA bundle used to verify client certificates (mTLS). Clients without a
+    /// cert chaining to this CA are rejected at the TLS handshake.
+    #[arg(long, default_value = "/etc/agentic-dns/certs/ca.crt")]
+    client_ca: String,
+    /// Also offer classical X25519 key exchange for clients that cannot do
+    /// X25519MLKEM768 yet. Off by default: without it the DoT listener is
+    /// PQ-hybrid only.
+    #[arg(long)]
+    allow_classical_kx: bool,
     #[arg(long, default_value = "127.0.0.1")]
     upstream_dns: String,
     #[arg(long, default_value_t = 853)]
@@ -264,13 +272,12 @@ async fn api_trace(Query(params): Query<HashMap<String, String>>) -> (StatusCode
 }
 
 async fn api_pihole(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Json<Value>) {
-    let config = load_config("/etc/agentic-dns/config.toml");
     // PiHole v6 API is minimal; read directly from FTL SQLite database
     let db_path = "/etc/pihole/pihole-FTL.db";
 
     // Get recent queries
     let recent = Command::new("sqlite3")
-        .args(["-json", db_path, &format!(
+        .args(["-json", db_path,
             "SELECT datetime(qs.timestamp, 'unixepoch') as timestamp, \
              CASE qs.type WHEN 1 THEN 'A' WHEN 2 THEN 'AAAA' ELSE 'OTHER' END as qtype, \
              d.domain as domain, \
@@ -281,16 +288,16 @@ async fn api_pihole(Query(_): Query<HashMap<String, String>>) -> (StatusCode, Js
              LEFT JOIN domain_by_id d ON qs.domain = d.id \
              LEFT JOIN client_by_id c ON qs.client = c.id \
              ORDER BY qs.id DESC LIMIT 20"
-        )])
+        ])
         .output();
 
     // Get top domains
     let top = Command::new("sqlite3")
-        .args(["-json", db_path, &format!(
+        .args(["-json", db_path,
             "SELECT d.domain as domain, COUNT(*) as count FROM query_storage qs \
              LEFT JOIN domain_by_id d ON qs.domain = d.id \
              GROUP BY d.domain ORDER BY count DESC LIMIT 10"
-        )])
+        ])
         .output();
 
     // Get summary stats
@@ -529,7 +536,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.dot_proxy {
-        run_dot_proxy(&args.cert_file, &args.key_file, args.dot_port, &args.upstream_dns).await?;
+        run_dot_proxy(&args.cert_file, &args.key_file, &args.client_ca, args.allow_classical_kx, args.dot_port, &args.upstream_dns).await?;
         return Ok(());
     }
 
@@ -554,52 +561,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// DNS-over-TLS proxy: accepts TLS connections on the specified port,
+fn load_pem_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, Box<dyn std::error::Error>> {
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+    let certs: Vec<_> = rustls_pemfile::certs(&mut reader).collect::<Result<_, _>>()?;
+    if certs.is_empty() {
+        return Err(format!("no certificates found in {}", path).into());
+    }
+    Ok(certs)
+}
+
+/// Build a TLS server config that (a) requires a client certificate chaining
+/// to `client_ca` and (b) only negotiates the X25519MLKEM768 hybrid
+/// post-quantum key exchange, so captured handshakes cannot be decrypted
+/// later by a quantum-capable adversary (harvest-now-decrypt-later).
+/// Certificates stay classical (ECDSA/Ed25519/RSA): authentication is not
+/// exposed to HNDL, only key exchange is.
+fn build_mtls_config(cert_file: &str, key_file: &str, client_ca: &str, allow_classical_kx: bool) -> Result<rustls::ServerConfig, Box<dyn std::error::Error>> {
+    use rustls::crypto::{aws_lc_rs, CryptoProvider};
+    use rustls::server::WebPkiClientVerifier;
+    use rustls::{RootCertStore, ServerConfig};
+
+    let mut kx_groups = vec![aws_lc_rs::kx_group::X25519MLKEM768];
+    if allow_classical_kx {
+        kx_groups.push(aws_lc_rs::kx_group::X25519);
+    }
+    let provider = Arc::new(CryptoProvider {
+        kx_groups,
+        ..aws_lc_rs::default_provider()
+    });
+
+    let cert_chain = load_pem_certs(cert_file)?;
+    let mut key_reader = std::io::BufReader::new(std::fs::File::open(key_file)?);
+    let key_der = rustls_pemfile::private_key(&mut key_reader)?
+        .ok_or_else(|| format!("no private key found in {} (PKCS#8, SEC1 or PKCS#1 PEM)", key_file))?;
+
+    let mut roots = RootCertStore::empty();
+    for ca in load_pem_certs(client_ca)? {
+        roots.add(ca)?;
+    }
+    let verifier = WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone()).build()?;
+
+    let config = ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()?
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(cert_chain, key_der)?;
+    Ok(config)
+}
+
+/// DNS-over-TLS proxy: accepts mTLS connections on the specified port,
 /// reads DNS queries (2-byte length prefix + wire format), forwards
 /// them as plain DNS (UDP) to the upstream resolver (pihole), and
 /// returns responses.
-async fn run_dot_proxy(cert_file: &str, key_file: &str, dot_port: u16, upstream_dns: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::BufRead as _;
+async fn run_dot_proxy(cert_file: &str, key_file: &str, client_ca: &str, allow_classical_kx: bool, dot_port: u16, upstream_dns: &str) -> Result<(), Box<dyn std::error::Error>> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
-    use rustls_pemfile::{certs, rsa_private_keys};
     use tokio_rustls::TlsAcceptor;
-    use rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer}};
-    use rustls::crypto;
 
-    // Install the aws_lc_rs crypto provider (required by rustls 0.23+)
-    let provider = crypto::aws_lc_rs::default_provider();
-    provider.install_default().map_err(|e| {
-        eprintln!("Warning: crypto provider already installed: {:?}", e);
-    }).ok();
-
-    // Load cert and key
-    let cert_file_mut = &mut std::fs::File::open(cert_file)?;
-    let mut cert_buf = std::io::BufReader::new(cert_file_mut);
-    let cert_vec: Vec<CertificateDer<'static>> = certs(&mut cert_buf)
-        .filter_map(|c| c.ok())
-        .collect();
-
-    let key_file_mut = &mut std::fs::File::open(key_file)?;
-    let mut key_buf = std::io::BufReader::new(key_file_mut);
-    let key_der: PrivateKeyDer<'static> = rsa_private_keys(&mut key_buf)
-        .filter_map(|k| k.ok())
-        .next()
-        .map(|k| PrivateKeyDer::from(k))
-        .ok_or("No RSA private key found (use PKCS#1 format)")?;
-
-    if cert_vec.is_empty() {
-        return Err("Failed to load cert".into());
-    }
-
-    let config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(cert_vec, key_der)?;
+    let config = build_mtls_config(cert_file, key_file, client_ca, allow_classical_kx)?;
 
     let acceptor = TlsAcceptor::from(std::sync::Arc::new(config));
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", dot_port)).await?;
-    println!("DoT proxy listening on 0.0.0.0:{} -> {}", dot_port, upstream_dns);
+    let kx = if allow_classical_kx { "X25519MLKEM768+X25519" } else { "X25519MLKEM768 only" };
+    println!("DoT proxy (mTLS, kx: {}) listening on 0.0.0.0:{} -> {}", kx, dot_port, upstream_dns);
 
     let upstream_addr: SocketAddr = format!("{}:53", upstream_dns).parse()?;
 
