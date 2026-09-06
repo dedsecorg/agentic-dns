@@ -105,9 +105,12 @@ fn is_port_listening(port: u16) -> bool {
     let output = Command::new("ss").args(["-tulnp"]).output();
     if let Ok(out) = output {
         let stdout = String::from_utf8_lossy(&out.stdout);
-        for line in stdout.lines() {
-            let port_str = format!(":{}", port);
-            if line.contains(&port_str) {
+        // Column 4 is Local Address:Port; the port is everything after the last ':'
+        // so bracketed/unbracketed IPv6 addresses are handled.
+        for line in stdout.lines().skip(1) {
+            let Some(local) = line.split_whitespace().nth(4) else { continue };
+            let Some((_, p)) = local.rsplit_once(':') else { continue };
+            if p.parse::<u16>().ok() == Some(port) {
                 return true;
             }
         }
