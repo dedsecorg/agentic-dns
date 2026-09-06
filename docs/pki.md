@@ -55,7 +55,7 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
 for svc in api dot; do
   openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
     -subj "/CN=agentic-dns-$svc" \
-    -addext "subjectAltName=DNS:$(hostname),IP:127.0.0.1" \
+    -addext "subjectAltName=DNS:$(hostname),DNS:localhost,IP:127.0.0.1" \
     -keyout $svc.key -out $svc.csr
   openssl x509 -req -in $svc.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
     -days 365 -copy_extensions copy -out $svc.crt

@@ -362,6 +362,7 @@ cmd_api() {
     while true; do
         socat OPENSSL-LISTEN:"${API_PORT}",reuseaddr,fork,cert="$API_TLS_CERT",key="$API_TLS_KEY",cafile="$API_TLS_CA",verify=1,openssl-min-proto-version=TLS1.3 \
             SYSTEM:"$0 api-handler" 2>/dev/null
+        log "ERROR: mTLS API listener on :${API_PORT} exited (rc=$?); retrying in 1s"
         sleep 1
     done
 }
@@ -372,7 +373,10 @@ cmd_api_handler() {
     IFS=' ' read -r method target _ || true
     path="${target%%\?*}"
     query="${target#*\?}"; [ "$query" = "$target" ] && query=""
-    domain=$(printf '%s' "$query" | tr '&' '\n' | sed -n 's/^domain=//p' | head -1 | tr -cd 'A-Za-z0-9.-')
+    domain=$(printf '%s' "$query" | tr '&' '\n' | sed -n 's/^domain=//p' | head -1)
+    domain=$(printf '%b' "${domain//%/\\x}")   # percent-decode
+    local domain_ok=1
+    [[ "$domain" =~ ^[A-Za-z0-9._-]{1,253}$ ]] || domain_ok=0
 
     _api_respond() {  # $1 = status line, $2 = JSON body
         printf 'HTTP/1.1 %s\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n%s\n' "$1" "$2"
@@ -387,6 +391,8 @@ cmd_api_handler() {
         "GET /api/v1/query"|"GET /api/v1/trace")
             if [ -z "$domain" ]; then
                 _api_respond "400 Bad Request" '{"status":"error","message":"domain= query parameter required"}'
+            elif [ "$domain_ok" = 0 ]; then
+                _api_respond "400 Bad Request" '{"status":"error","message":"domain contains unsupported characters"}'
             elif [ "$path" = /api/v1/query ]; then
                 _api_text "$(dns_query "$domain" 2>&1)"
             else
