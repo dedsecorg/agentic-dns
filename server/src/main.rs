@@ -559,7 +559,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Run with --monitor for health daemon, --mcp for MCP server");
 
     loop {
-        let (stream, peer) = listener.accept().await?;
+        let (stream, peer) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("API accept error: {} (retrying)", e);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+        };
         let acceptor = acceptor.clone();
         let app = app.clone();
         tokio::spawn(async move {

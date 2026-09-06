@@ -26,7 +26,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/agentic-dns-server
+ExecStart=/usr/local/bin/agentic-dns-server --dot-proxy
 Restart=always
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
