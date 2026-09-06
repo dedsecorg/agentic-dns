@@ -30,4 +30,12 @@ agentic-dns-server --dot-proxy \
 
 Keys may be PKCS#8, SEC1 or PKCS#1 PEM.
 
-EOF 2>&1
+Other modes (all read `--config`, default `/etc/agentic-dns/config.toml`, once at
+startup):
+
+- no flag — mTLS REST API on `--api-port` (8099), same `/api/v1/*` routes as
+  `agentic-dns api` and the same `--cert-file`/`--key-file`/`--client-ca`
+  requirement. There is no plaintext listener.
+- `--monitor` — health daemon polling every `health_check_interval_secs`.
+- `--mcp` — stdio MCP server.
+

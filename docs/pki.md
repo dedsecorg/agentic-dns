@@ -12,6 +12,12 @@ certificate:
 |---------|---------|----------------------------|
 | REST API `:8099` | `agentic-dns api` (socat `OPENSSL-LISTEN`) | `AGENTIC_DNS_TLS_CERT` / `AGENTIC_DNS_TLS_KEY` / `AGENTIC_DNS_TLS_CA` → `/etc/agentic-dns/certs/{api.crt,api.key,ca.crt}` |
 | DoT proxy `:853` | `agentic-dns-server --dot-proxy` (rustls) | `--cert-file` / `--key-file` / `--client-ca` → `/etc/agentic-dns/certs/{dot.crt,dot.key,ca.crt}` |
+| Rust REST API `:8099` | `agentic-dns-server` (no mode flag; rustls + hyper) | same `--cert-file` / `--key-file` / `--client-ca` as the DoT proxy |
+
+The Rust binary has no plaintext HTTP mode: `agentic-dns-server` without
+`--dot-proxy` serves the same `/api/v1/*` surface as `agentic-dns api`, behind
+the same `build_mtls_config` (client cert required, X25519MLKEM768 key
+exchange). Run one or the other on `:8099`, not both.
 
 The sibling project agentic-route uses the same layout under
 `/etc/agentic-route/certs/` (`AGENTIC_ROUTE_TLS_*`). One CA can sign both.
@@ -67,8 +73,11 @@ done
 agent=hermes
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -subj "/CN=agent-$agent" -keyout clients/$agent.key -out clients/$agent.csr
+#    rustls (webpki) rejects X.509 v1 certificates, and `openssl x509 -req`
+#    emits v1 unless extensions are present, so always pass an extfile.
 openssl x509 -req -in clients/$agent.csr -CA ca.crt -CAkey ca.key \
-  -CAcreateserial -days 90 -out clients/$agent.crt
+  -CAcreateserial -days 90 -out clients/$agent.crt \
+  -extfile <(printf 'basicConstraints=CA:FALSE\nkeyUsage=digitalSignature\nextendedKeyUsage=clientAuth\n')
 ```
 
 Keys are PKCS#8 PEM (`openssl req -newkey` default); the Rust loader accepts
