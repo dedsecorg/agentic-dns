@@ -14,6 +14,11 @@ if [ -z "$PIHOLE_API_KEY" ]; then
     fi
 fi
 API_PORT="${AGENTIC_DNS_API_PORT:-8099}"
+# mTLS material for the REST API. Paths only - the files themselves live in
+# /etc/agentic-dns/certs/ and are never committed. See docs/pki.md.
+API_TLS_CERT="${AGENTIC_DNS_TLS_CERT:-/etc/agentic-dns/certs/api.crt}"
+API_TLS_KEY="${AGENTIC_DNS_TLS_KEY:-/etc/agentic-dns/certs/api.key}"
+API_TLS_CA="${AGENTIC_DNS_TLS_CA:-/etc/agentic-dns/certs/ca.crt}"
 VPN_DNS="${VPN_DNS:-}"
 SERVER_BIN="${AGENTIC_DNS_SERVER_BIN:-agentic-dns-server}"
 
@@ -342,18 +347,59 @@ cmd_enforce() {
 }
 
 cmd_api() {
-    log "Starting agentic-dns API server on :${API_PORT}..."
-    log "Endpoints: /api/v1/status /api/v1/health /api/v1/trace?domain= /api/v1/query?domain= /api/v1/routes"
-    
-    while true; do
-        if command -v socat >/dev/null 2>&1; then
-            socat -v TCP-LISTEN:${API_PORT},reuseaddr,fork SYSTEM:"$0 api-handler" 2>/dev/null
-        else
-            while true; do
-                echo -e "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\"}" | nc -l -p ${API_PORT} 2>/dev/null
-            done
-        fi
+    command -v socat >/dev/null 2>&1 || { log "FATAL: socat (with OpenSSL) is required for api"; exit 1; }
+    local f
+    for f in "$API_TLS_CERT" "$API_TLS_KEY" "$API_TLS_CA"; do
+        [ -r "$f" ] || { log "FATAL: TLS material missing or unreadable: $f (see docs/pki.md)"; exit 1; }
     done
+    log "Starting agentic-dns API server (mTLS) on :${API_PORT}..."
+    log "Endpoints: /api/v1/status /api/v1/health /api/v1/trace?domain= /api/v1/query?domain= /api/v1/routes"
+
+    # socat terminates TLS and verifies the client certificate against
+    # $API_TLS_CA before api-handler is spawned; unauthenticated peers never
+    # reach the handler. TLS 1.3 only so a PQ-capable OpenSSL (>= 3.5)
+    # negotiates X25519MLKEM768 automatically.
+    while true; do
+        socat OPENSSL-LISTEN:"${API_PORT}",reuseaddr,fork,cert="$API_TLS_CERT",key="$API_TLS_KEY",cafile="$API_TLS_CA",verify=1,openssl-min-proto-version=TLS1.3 \
+            SYSTEM:"$0 api-handler" 2>/dev/null
+        log "ERROR: mTLS API listener on :${API_PORT} exited (rc=$?); retrying in 1s"
+        sleep 1
+    done
+}
+
+# One HTTP request per socat child. Only reached after mTLS verification.
+cmd_api_handler() {
+    local method target path query domain
+    IFS=' ' read -r method target _ || true
+    path="${target%%\?*}"
+    query="${target#*\?}"; [ "$query" = "$target" ] && query=""
+    domain=$(printf '%s' "$query" | tr '&' '\n' | sed -n 's/^domain=//p' | head -1)
+    domain=$(printf '%b' "${domain//%/\\x}")   # percent-decode
+    local domain_ok=1
+    [[ "$domain" =~ ^[A-Za-z0-9._-]{1,253}$ ]] || domain_ok=0
+
+    _api_respond() {  # $1 = status line, $2 = JSON body
+        printf 'HTTP/1.1 %s\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n%s\n' "$1" "$2"
+    }
+    _api_text() { _api_respond "200 OK" "$(jq -n --arg t "$1" '{status:"ok", text:$t}')"; }
+
+    case "$method $path" in
+        "GET /api/v1/status")     _api_text "$(cmd_status 2>&1)" ;;
+        "GET /api/v1/health")     _api_text "$(cmd_health 2>&1)" ;;
+        "GET /api/v1/routes")     _api_text "$(cmd_routes 2>&1)" ;;
+        "GET /api/v1/pihole/log") _api_text "$(cmd_pihole_log 2>&1)" ;;
+        "GET /api/v1/query"|"GET /api/v1/trace")
+            if [ -z "$domain" ]; then
+                _api_respond "400 Bad Request" '{"status":"error","message":"domain= query parameter required"}'
+            elif [ "$domain_ok" = 0 ]; then
+                _api_respond "400 Bad Request" '{"status":"error","message":"domain contains unsupported characters"}'
+            elif [ "$path" = /api/v1/query ]; then
+                _api_text "$(dns_query "$domain" 2>&1)"
+            else
+                _api_text "$(cmd_trace "$domain" 2>&1)"
+            fi ;;
+        *) _api_respond "404 Not Found" '{"status":"error","message":"not found"}' ;;
+    esac
 }
 
 cmd_mcp() {
@@ -487,6 +533,7 @@ main() {
         health)    cmd_health ;;
         tag)       cmd_tag ;;
         api)       cmd_api ;;
+        api-handler) cmd_api_handler ;;
         mcp)       cmd_mcp ;;
         server)    cmd_server "$@" ;;
         help|-h|--help) cmd_help ;;
