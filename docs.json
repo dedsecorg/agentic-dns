@@ -26,7 +26,8 @@
           "mcp-guide",
           "rest-api",
           "phone-dns-interception",
-          "rust-dot-server"
+          "rust-dot-server",
+          "pki"
         ]
       },
       {
