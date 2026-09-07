@@ -245,8 +245,8 @@ cmd_add_route() {
         return 0
     fi
     local new_line='newServer({address="'"$addr"'", name="'"$name"'"})'
-    sudo -S -p '' sed -i "s/setServerPolicy/${new_line}\nsetServerPolicy/" "$conf"
-    sudo -S -p '' systemctl restart dnsdist 2>/dev/null
+    sudo sed -i "s/setServerPolicy/${new_line}\nsetServerPolicy/" "$conf"
+    sudo systemctl restart dnsdist 2>/dev/null
     echo "Added route: $name -> $addr"
 }
 
@@ -257,8 +257,8 @@ cmd_remove_route() {
         return 1
     fi
     local conf="/etc/dnsdist/dnsdist.conf"
-    sudo -S -p '' sed -i "/name=\"$name\"/d" "$conf"
-    sudo -S -p '' systemctl restart dnsdist 2>/dev/null
+    sudo sed -i "/name=\"$name\"/d" "$conf"
+    sudo systemctl restart dnsdist 2>/dev/null
     echo "Removed route: $name"
 }
 
@@ -282,7 +282,7 @@ cmd_bypass() {
     
     local conf="/etc/dnsdist/dnsdist.conf"
     if grep -q "name=\"$failing\"" "$conf" 2>/dev/null; then
-        sudo -S -p '' sed -i "s/^\(.*name=\"$failing\".*\)/-- \1/" "$conf"
+        sudo sed -i "s/^\(.*name=\"$failing\".*\)/-- \1/" "$conf"
     fi
     
     local backup_line
@@ -295,11 +295,11 @@ cmd_bypass() {
     esac
     backup_line=$(grep "name=\"$backup\"" "$conf" 2>/dev/null | head -1)
     if [ -n "$backup_line" ]; then
-        sudo -S -p '' sed -i "/name=\"$backup\"/d" "$conf"
-        sudo -S -p '' sed -i "s/setServerPolicy/${backup_line}\nsetServerPolicy/" "$conf"
+        sudo sed -i "/name=\"$backup\"/d" "$conf"
+        sudo sed -i "s/setServerPolicy/${backup_line}\nsetServerPolicy/" "$conf"
     fi
     
-    sudo -S -p '' systemctl restart dnsdist 2>/dev/null
+    sudo systemctl restart dnsdist 2>/dev/null
     echo "Done: dnsdist now prioritizes ${backup}, ${failing} bypassed"
 }
 
@@ -357,28 +357,49 @@ cmd_tag() {
 PHONE_IP="${PHONE_IP:-10.0.0.100}"
 PIHOLE_IP="${PIHOLE_IP:-127.0.0.1}"
 
+# Validate PIHOLE_IP as a single IP address (IPv4 or IPv6)
+validate_pihole_ip() {
+    local ip="$1"
+    # IPv4: four octets 0-255
+    if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        IFS='.' read -r o1 o2 o3 o4 <<< "$ip"
+        [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ] && return 0
+    fi
+    # IPv6: basic format check (simplified)
+    if [[ "$ip" =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]]; then
+        return 0
+    fi
+    return 1
+}
+
 cmd_enforce() {
     local action="${1:-status}"
     local target="${2:-$PHONE_IP}"
+
+    # Validate PIHOLE_IP before using in privileged nft command
+    if ! validate_pihole_ip "$PIHOLE_IP"; then
+        echo "Error: PIHOLE_IP must be a valid IP address, got: $PIHOLE_IP" >&2
+        return 1
+    fi
 
     case "$action" in
         status)
             echo "DNS interception rules (target: $target):"
             echo ""
             echo "--- nat PREROUTING (redirect DoT to pihole) ---"
-            sudo -S -p '' nft list chain ip nat PREROUTING 2>/dev/null | grep "$target" || echo "  (none)"
+            sudo nft list chain ip nat PREROUTING 2>/dev/null | grep "$target" || echo "  (none)"
             echo ""
             echo "--- filter FORWARD (block DoQu) ---"
-            sudo -S -p '' nft list chain ip filter FORWARD 2>/dev/null | grep "$target" || echo "  (none)"
+            sudo nft list chain ip filter FORWARD 2>/dev/null | grep "$target" || echo "  (none)"
             ;;
         on|enable|start)
             echo "Enabling DNS interception for $target..."
-            sudo -S -p '' nft insert rule ip nat PREROUTING ip saddr "$target" tcp dport 853 dnat to ${PIHOLE_IP}:853 2>/dev/null && echo "  [+] DoT redirect: port 853 -> ${PIHOLE_IP}:853" || echo "  [-] No DoT redirect needed"
+            sudo nft insert rule ip nat PREROUTING ip saddr "$target" tcp dport 853 dnat to "${PIHOLE_IP}:853" 2>/dev/null && echo "  [+] DoT redirect: port 853 -> ${PIHOLE_IP}:853" || echo "  [-] No DoT redirect needed"
             ;;
         off|disable|stop)
             echo "Removing DNS interception rules for $target..."
-            for handle in $(sudo -S -p '' nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oE 'handle \K\d+'); do
-                sudo -S -p '' nft delete rule ip nat PREROUTING handle "$handle" 2>/dev/null && echo "  [-] Removed nat rule handle $handle"
+            for handle in $(sudo nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oE 'handle \K\d+'); do
+                sudo nft delete rule ip nat PREROUTING handle "$handle" 2>/dev/null && echo "  [-] Removed nat rule handle $handle"
             done
             ;;
         clean)
