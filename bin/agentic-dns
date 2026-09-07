@@ -88,7 +88,7 @@ is_listening() {
         127.0.0.1|0.0.0.0|*)
             if [ "$addr" != "$VPN_DNS" ]; then
                 # Local service - check column 4 (Local Address:Port) like Rust ss_output_has_port
-                ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($4,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
+                ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($5,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
             fi
             ;;
     esac
@@ -433,22 +433,26 @@ cmd_mcp() {
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         
-        local method req_id
+        local method req_id has_id
         method=$(echo "$line" | jq -r '.method // empty' 2>/dev/null)
-        req_id=$(echo "$line" | jq -c '.id // 1' 2>/dev/null)
+        has_id=$(echo "$line" | jq 'has("id")' 2>/dev/null)
+        req_id=$(echo "$line" | jq -c '.id' 2>/dev/null)
         
         case "$method" in
             "initialize")
                 # MCP handshake: client sends initialize first. Must echo back
-                # protocolVersion, capabilities, and serverInfo. Echo the client's
-                # requested protocolVersion when present, else default.
-                local proto
-                proto=$(echo "$line" | jq -c '.params.protocolVersion // "2024-11-05"' 2>/dev/null)
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%s,"capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}
-' "$req_id" "$proto"
+                # protocolVersion, capabilities, and serverInfo. Return the
+                # highest supported protocolVersion (we implement 2024-11-05).
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}
+' "$req_id"
                 ;;
             "notifications/initialized"|"notifications/"*)
                 # Notifications have no id and require no response.
+                # Only respond if the client incorrectly included an id.
+                if [ "$has_id" = "true" ]; then
+                    printf '{"jsonrpc":"2.0","id":%s,"result":{}}
+' "$req_id"
+                fi
                 ;;
             "ping")
                 # MCP liveness ping: respond with an empty result object.
