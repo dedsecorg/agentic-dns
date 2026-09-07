@@ -26,6 +26,7 @@ SERVER_BIN="${AGENTIC_DNS_SERVER_BIN:-agentic-dns-server}"
 discover_vpn_dns() {
     [ -n "$VPN_DNS" ] && return 0
     
+    # Try to discover from NetworkManager (proton0 interface DNS)
     if ip link show proton0 >/dev/null 2>&1; then
         local nm_dns
         nm_dns=$(nmcli dev show proton0 2>/dev/null | grep "IP4.DNS" | awk '{print $2}' | head -1)
@@ -43,8 +44,25 @@ discover_vpn_dns() {
 discover_vpn_dns
 
 if [ -z "$VPN_DNS" ]; then
+    # Check ProtonVPN status output for DNS
     VPN_DNS=$(protonvpn status 2>/dev/null | grep -oE 'DNS:\s*\K[0-9.]+' | head -1)
 fi
+
+# --- Pi-hole v6 (pihole.toml) support ---
+# Read upstream DNS from pihole.toml if it exists (Pi-hole v6+)
+discover_pihole_upstreams() {
+    local pihole_toml="/etc/pihole/pihole.toml"
+    if [ -f "$pihole_toml" ]; then
+        # Extract upstreams from [dns] section
+        # Format: upstreams = ["127.0.0.1#5330"] (may span multiple lines)
+        local upstreams
+        upstreams=$(grep -A 2 'upstreams.*=' "$pihole_toml" 2>/dev/null | grep -o '\"[^\"]*\"' | head -1 | tr -d '\"')
+        if [ -n "$upstreams" ]; then
+            PIHOLE_UPSTREAMS="$upstreams"
+            log "Pi-hole upstreams from pihole.toml: $PIHOLE_UPSTREAMS"
+        fi
+    fi
+}
 
 # Service definitions: name|port|addr|type|upstream
 SERVICES=(
@@ -60,15 +78,21 @@ SERVICES=(
 # ---- Helper functions ----
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
+# Discover Pi-hole upstreams after log is defined
+discover_pihole_upstreams
+
 is_listening() {
     local addr="$1" port="$2"
+    # For remote addresses (VPN DNS), check if port is reachable
     case "$addr" in
         127.0.0.1|0.0.0.0|*)
             if [ "$addr" != "$VPN_DNS" ]; then
-                ss -tulnp 2>/dev/null | grep -qE ":${port}\b" && return 0
+                # Local service - check column 4 (Local Address:Port) like Rust ss_output_has_port
+                ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($4,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
             fi
             ;;
     esac
+    # For remote addresses, try a DNS query
     [ "$addr" = "$VPN_DNS" ] && dns_query "example.com" "$addr" "$port" >/dev/null 2>&1 && return 0
     return 1
 }
@@ -411,13 +435,25 @@ cmd_mcp() {
         
         local method req_id
         method=$(echo "$line" | jq -r '.method // empty' 2>/dev/null)
-        req_id=$(echo "$line" | jq -r '.id // 1' 2>/dev/null)
+        req_id=$(echo "$line" | jq -c '.id // 1' 2>/dev/null)
         
         case "$method" in
             "initialize")
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}\n' "$req_id"
+                # MCP handshake: client sends initialize first. Must echo back
+                # protocolVersion, capabilities, and serverInfo. Echo the client's
+                # requested protocolVersion when present, else default.
+                local proto
+                proto=$(echo "$line" | jq -c '.params.protocolVersion // "2024-11-05"' 2>/dev/null)
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%s,"capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}
+' "$req_id" "$proto"
                 ;;
             "notifications/initialized"|"notifications/"*)
+                # Notifications have no id and require no response.
+                ;;
+            "ping")
+                # MCP liveness ping: respond with an empty result object.
+                printf '{"jsonrpc":"2.0","id":%s,"result":{}}
+' "$req_id"
                 ;;
             "tools/list")
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}}]}}\n' "$req_id"
