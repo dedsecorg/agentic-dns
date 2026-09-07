@@ -47,4 +47,3 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-EOF 2>&1
