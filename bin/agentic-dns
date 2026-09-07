@@ -88,7 +88,7 @@ is_listening() {
         127.0.0.1|0.0.0.0|*)
             if [ "$addr" != "$VPN_DNS" ]; then
                 # Local service - check column 4 (Local Address:Port) like Rust ss_output_has_port
-                ss -tulnp 2>/dev/null | awk -v p=":$port$" '\$4 ~ p {found=1} END {exit !found}' && return 0
+                ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($4,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
             fi
             ;;
     esac
