@@ -2,7 +2,7 @@
 
 ## Overview
 
-`agentic-dns-server` — standalone binary:
+`agentic-dns-server` -- standalone binary:
 - Terminates TLS on 853 (DoT) or 443 (DoH)
 - Validates client certs (mTLS optional)
 - Forwards to local DNS chain (Pi-hole -> chain)

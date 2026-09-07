@@ -27,8 +27,8 @@ sudo install -m 755 agentic-dns /usr/local/bin/agentic-dns
 ```
 
 Each release includes:
-- `agentic-dns-v<version>.tar.gz` — prebuilt `agentic-dns` CLI binary
-- `checksums.txt` — SHA256 checksums for verification
+- `agentic-dns-v<version>.tar.gz` -- prebuilt `agentic-dns` CLI binary
+- `checksums.txt` -- SHA256 checksums for verification
 
 ## Docker / GHCR (Multi-Arch)
 
@@ -57,11 +57,11 @@ sudo -S -p '' ./install.sh
 ```
 
 Installs:
-- `/usr/local/bin/agentic-dns` — main CLI
-- `/usr/local/bin/agentic-dns-server` — Rust DoT/mTLS proxy
-- `/etc/agentic-dns/` — configs for dnsdist, CoreDNS, Unbound, Stubby, DNSCrypt
-- `/etc/systemd/system/agentic-dns.service` — systemd unit
-- `/etc/systemd/system/agentic-dns-server.service` — Rust server unit
+- `/usr/local/bin/agentic-dns` -- main CLI
+- `/usr/local/bin/agentic-dns-server` -- Rust DoT/mTLS proxy
+- `/etc/agentic-dns/` -- configs for dnsdist, CoreDNS, Unbound, Stubby, DNSCrypt
+- `/etc/systemd/system/agentic-dns.service` -- systemd unit
+- `/etc/systemd/system/agentic-dns-server.service` -- Rust server unit
 
 Enable services:
 
