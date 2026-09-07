@@ -430,7 +430,7 @@ cmd_mcp() {
     log "Starting agentic-dns MCP server (JSON-RPC over stdio)..." >&2
     log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log" >&2
     
-        while IFS= read -r line || [ -n "$line" ]; do
+    while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         
         local method req_id has_id
