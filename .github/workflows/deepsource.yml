@@ -1,0 +1,37 @@
+name: DeepSource
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deepsource-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deepsource:
+    name: Code Analysis (DeepSource)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install DeepSource CLI
+        run: |
+          curl -fsSL https://cli.deepsource.com/install | BINDIR=./bin sh
+
+      - name: Report coverage to DeepSource (OIDC)
+        env:
+          DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
+        run: |
+          ./bin/deepsource report \
+            --analyzer=test-coverage \
+            --key=ruby \
+            --value-file=.deepsource/coverage/ruby.json \
+            --use-oidc || true
