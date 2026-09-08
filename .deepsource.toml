@@ -1,0 +1,35 @@
+version = 1
+
+exclude_patterns = [
+  "server/target/**",
+  "**/*.rs.bk",
+  "vendor/**",
+  "_site/**",
+  "node_modules/**",
+  ".bundle/**",
+  "Gemfile.lock",
+  "**/*.lock",
+]
+
+test_patterns = [
+  "tests/**",
+  "test_cli.sh",
+]
+
+[[analyzers]]
+name = "rust"
+enabled = true
+
+  [analyzers.meta]
+  msrv = "stable"
+
+[[analyzers]]
+name = "ruby"
+enabled = true
+
+[[analyzers]]
+name = "shell"
+enabled = true
+
+  [analyzers.meta]
+  dialect = "bash"
