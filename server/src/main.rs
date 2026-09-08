@@ -306,12 +306,12 @@ async fn api_pihole() -> (StatusCode, Json<Value>) {
         .output();
 
     let recent_data: Value = match &recent {
-        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or(json!([])),
+        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_else(|_| json!([])),
         Err(_) => json!({"error": "Failed to read recent queries"}),
     };
 
     let top_data: Value = match &top {
-        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or(json!([])),
+        Ok(out) => serde_json::from_slice(&out.stdout).unwrap_or_else(|_| json!([])),
         Err(_) => json!({"error": "Failed to read top domains"}),
     };
 
@@ -360,7 +360,7 @@ async fn run_health_monitor(config: SharedConfig) {
         for svc in &services {
             let name = svc["name"].as_str().unwrap_or("");
             let status = svc["status"].as_str().unwrap_or("unknown");
-            let prev = last_status.get(name).map(|s| s.as_str()).unwrap_or("unknown");
+            let prev = last_status.get(name).map_or("unknown", |s| s.as_str());
 
             if prev == "up" && status != "up" {
                 alerts.push(format!("ALERT: {} went DOWN (was {}, now {})", name, prev, status));
@@ -668,6 +668,7 @@ async fn run_dot_proxy(cert_file: &str, key_file: &str, client_ca: &str, allow_c
                 }
             };
 
+            // skipcq: RS-S1006 - ephemeral UDP client socket for upstream forwarding (port 0 = OS-assigned)
             let udp = match UdpSocket::bind("0.0.0.0:0").await {
                 Ok(u) => u,
                 Err(e) => {
