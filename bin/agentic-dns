@@ -51,15 +51,16 @@ fi
 # --- Pi-hole v6 (pihole.toml) support ---
 # Read upstream DNS from pihole.toml if it exists (Pi-hole v6+)
 discover_pihole_upstreams() {
-    local pihole_toml="/etc/pihole/pihole.toml"
+    local pihole_toml="${PIHOLE_TOML:-/etc/pihole/pihole.toml}"
+    PIHOLE_UPSTREAMS=""
     if [ -f "$pihole_toml" ]; then
         # Extract upstreams from [dns] section
-        # Format: upstreams = ["127.0.0.1#5330"] (may span multiple lines)
+        # Format: upstreams = ["127.0.0.1#5330", ...] (may span multiple lines)
         local upstreams
-        upstreams=$(grep -A 2 'upstreams.*=' "$pihole_toml" 2>/dev/null | grep -o '\"[^\"]*\"' | head -1 | tr -d '\"')
+        upstreams=$(sed -n '/^[[:space:]]*upstreams[[:space:]]*=/,/\]/p' "$pihole_toml" 2>/dev/null \
+            | grep -o '"[^"]*"' | tr -d '"' | paste -sd, -)
         if [ -n "$upstreams" ]; then
             PIHOLE_UPSTREAMS="$upstreams"
-            log "Pi-hole upstreams from pihole.toml: $PIHOLE_UPSTREAMS"
         fi
     fi
 }
@@ -77,9 +78,6 @@ SERVICES=(
 
 # ---- Helper functions ----
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
-
-# Discover Pi-hole upstreams after log is defined
-discover_pihole_upstreams
 
 is_listening() {
     local addr="$1" port="$2"
@@ -223,7 +221,8 @@ cmd_trace() {
 }
 
 cmd_routes() {
-    if [ -n "${PIHOLE_UPSTREAMS:-}" ]; then
+    discover_pihole_upstreams
+    if [ -n "$PIHOLE_UPSTREAMS" ]; then
         echo "Pi-hole upstreams (pihole.toml): $PIHOLE_UPSTREAMS"
     fi
     echo "DNS Routing Rules (dnsdist config):"
