@@ -57,8 +57,19 @@ discover_pihole_upstreams() {
         # Extract upstreams from [dns] section
         # Format: upstreams = ["127.0.0.1#5330", ...] (may span multiple lines)
         local upstreams
-        upstreams=$(sed -n '/^[[:space:]]*upstreams[[:space:]]*=/,/\]/p' "$pihole_toml" 2>/dev/null \
-            | grep -o '"[^"]*"' | tr -d '"' | paste -sd, -)
+        # Character-walk the array so a same-line "]" closes it and "]" inside
+        # a quoted value (e.g. "[::1]#53") does not.
+        upstreams=$(awk '
+            !inarr && /^[[:space:]]*upstreams[[:space:]]*=/ { inarr=1; sub(/^[^=]*=[[:space:]]*\[?/, "") }
+            inarr {
+                for (i = 1; i <= length($0); i++) {
+                    c = substr($0, i, 1)
+                    if (inq) { if (c == "\"") { inq=0; out = out (out == "" ? "" : ",") cur } else cur = cur c }
+                    else if (c == "\"") { inq=1; cur="" }
+                    else if (c == "]") { print out; closed=1; exit }
+                }
+            }
+            END { if (inarr && !closed) print out }' "$pihole_toml" 2>/dev/null | head -1)
         if [ -n "$upstreams" ]; then
             PIHOLE_UPSTREAMS="$upstreams"
         fi

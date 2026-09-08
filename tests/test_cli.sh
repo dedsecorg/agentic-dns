@@ -28,10 +28,10 @@ echo "PASSED"
 
 echo -n "Test 5: routes reports all Pi-hole upstreams (single-line + multiline TOML)... "
 TOML=$(mktemp)
-printf '[dns]\nupstreams = ["127.0.0.1#5330", "127.0.0.1#5335"]\n' > "$TOML"
-PIHOLE_TOML="$TOML" "$BIN" routes | grep -q 'Pi-hole upstreams (pihole.toml): 127.0.0.1#5330,127.0.0.1#5335'
-printf '[dns]\n  upstreams = [\n    "10.0.0.1#53",\n    "10.0.0.2#53",\n  ]\n' > "$TOML"
-PIHOLE_TOML="$TOML" "$BIN" routes | grep -q 'Pi-hole upstreams (pihole.toml): 10.0.0.1#53,10.0.0.2#53'
+printf '[dns]\nupstreams = ["127.0.0.1#5330", "127.0.0.1#5335"]\nhosts = ["1.2.3.4 foo"]\ninterface = "eth0"\n' > "$TOML"
+PIHOLE_TOML="$TOML" "$BIN" routes | grep -q 'Pi-hole upstreams (pihole.toml): 127.0.0.1#5330,127.0.0.1#5335$'
+printf '[dns]\n  upstreams = [\n    "[::1]#5330",\n    "10.0.0.2#53",\n  ]\n  hosts = ["9.9.9.9 bar"]\n' > "$TOML"
+PIHOLE_TOML="$TOML" "$BIN" routes | grep -q 'Pi-hole upstreams (pihole.toml): \[::1\]#5330,10.0.0.2#53$'
 rm -f "$TOML"
 PIHOLE_TOML="$TOML" "$BIN" routes | grep -q 'Pi-hole upstreams' && { echo "FAILED (stale upstreams after file removal)"; exit 1; }
 echo "PASSED"

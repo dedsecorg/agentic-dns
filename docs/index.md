@@ -149,7 +149,7 @@ npx -y @smithery/cli install @dedsecorg/agentic-dns
 | `agentic-dns status` | Show all DNS services, addresses, types, health |
 | `agentic-dns query <domain>` | Resolve through full chain |
 | `agentic-dns trace <domain>` | Trace DNS path with live packet capture at each hop |
-| `agentic-dns routes` | List current dnsdist routing rules |
+| `agentic-dns routes` | List Pi-hole upstreams (from `pihole.toml`) and current dnsdist routing rules |
 | `agentic-dns route add <name> <addr:port>` | Add upstream to dnsdist |
 | `agentic-dns route remove <name>` | Remove upstream from dnsdist |
 | `agentic-dns bypass <service> [backup]` | Bypass failing service (auto-switch to backup) |
@@ -250,7 +250,7 @@ curl --cacert /etc/agentic-dns/certs/ca.crt --cert agent.crt --key agent.key \
 Endpoints (all read-only; responses are `{"status":"ok","text":"..."}`):
 - `GET /api/v1/status` -- full service status
 - `GET /api/v1/health` -- health checks
-- `GET /api/v1/routes` -- dnsdist upstreams
+- `GET /api/v1/routes` -- Pi-hole upstreams (`pihole.toml`) and dnsdist upstreams
 - `GET /api/v1/query?domain=example.com` -- resolve
 - `GET /api/v1/trace?domain=example.com` -- trace
 - `GET /api/v1/pihole/log` -- Pi-hole logs
