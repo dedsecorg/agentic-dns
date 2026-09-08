@@ -18,7 +18,7 @@ curl --cacert /etc/agentic-dns/certs/ca.crt --cert agent.crt --key agent.key \
 Endpoints (all read-only; responses are `{"status":"ok","text":"..."}`):
 - `GET /api/v1/status` — full service status
 - `GET /api/v1/health` — health checks
-- `GET /api/v1/routes` — dnsdist upstreams
+- `GET /api/v1/routes` — Pi-hole upstreams (`pihole.toml`) and dnsdist upstreams
 - `GET /api/v1/query?domain=example.com` — resolve
 - `GET /api/v1/trace?domain=example.com` — trace
 - `GET /api/v1/pihole/log` — Pi-hole logs

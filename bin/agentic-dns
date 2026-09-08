@@ -51,15 +51,27 @@ fi
 # --- Pi-hole v6 (pihole.toml) support ---
 # Read upstream DNS from pihole.toml if it exists (Pi-hole v6+)
 discover_pihole_upstreams() {
-    local pihole_toml="/etc/pihole/pihole.toml"
+    local pihole_toml="${PIHOLE_TOML:-/etc/pihole/pihole.toml}"
+    PIHOLE_UPSTREAMS=""
     if [ -f "$pihole_toml" ]; then
         # Extract upstreams from [dns] section
-        # Format: upstreams = ["127.0.0.1#5330"] (may span multiple lines)
+        # Format: upstreams = ["127.0.0.1#5330", ...] (may span multiple lines)
         local upstreams
-        upstreams=$(grep -A 2 'upstreams.*=' "$pihole_toml" 2>/dev/null | grep -o '\"[^\"]*\"' | head -1 | tr -d '\"')
+        # Character-walk the array so a same-line "]" closes it and "]" inside
+        # a quoted value (e.g. "[::1]#53") does not.
+        upstreams=$(awk '
+            !inarr && /^[[:space:]]*upstreams[[:space:]]*=/ { inarr=1; sub(/^[^=]*=[[:space:]]*\[?/, "") }
+            inarr {
+                for (i = 1; i <= length($0); i++) {
+                    c = substr($0, i, 1)
+                    if (inq) { if (c == "\"") { inq=0; out = out (out == "" ? "" : ",") cur } else cur = cur c }
+                    else if (c == "\"") { inq=1; cur="" }
+                    else if (c == "]") { print out; closed=1; exit }
+                }
+            }
+            END { if (inarr && !closed) print out }' "$pihole_toml" 2>/dev/null | head -1)
         if [ -n "$upstreams" ]; then
             PIHOLE_UPSTREAMS="$upstreams"
-            log "Pi-hole upstreams from pihole.toml: $PIHOLE_UPSTREAMS"
         fi
     fi
 }
@@ -77,9 +89,6 @@ SERVICES=(
 
 # ---- Helper functions ----
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
-
-# Discover Pi-hole upstreams after log is defined
-discover_pihole_upstreams
 
 is_listening() {
     local addr="$1" port="$2"
@@ -223,6 +232,10 @@ cmd_trace() {
 }
 
 cmd_routes() {
+    discover_pihole_upstreams
+    if [ -n "$PIHOLE_UPSTREAMS" ]; then
+        echo "Pi-hole upstreams (pihole.toml): $PIHOLE_UPSTREAMS"
+    fi
     echo "DNS Routing Rules (dnsdist config):"
     local conf="/etc/dnsdist/dnsdist.conf"
     if [ -f "$conf" ]; then
@@ -245,8 +258,14 @@ cmd_add_route() {
         return 0
     fi
     local new_line='newServer({address="'"$addr"'", name="'"$name"'"})'
-    sudo -S -p '' sed -i "s/setServerPolicy/${new_line}\nsetServerPolicy/" "$conf"
-    sudo -S -p '' systemctl restart dnsdist 2>/dev/null
+    if ! sudo sed -i "s/setServerPolicy/${new_line}\nsetServerPolicy/" "$conf"; then
+        echo "Error: failed to update dnsdist config" >&2
+        return 1
+    fi
+    if ! sudo systemctl restart dnsdist; then
+        echo "Error: failed to restart dnsdist" >&2
+        return 1
+    fi
     echo "Added route: $name -> $addr"
 }
 
@@ -295,7 +314,10 @@ cmd_bypass() {
     
     local conf="/etc/dnsdist/dnsdist.conf"
     if grep -q "name=\"$failing\"" "$conf" 2>/dev/null; then
-        sudo -S -p '' sed -i "s/^\(.*name=\"$failing\".*\)/-- \1/" "$conf"
+        if ! sudo sed -i "s/^\(.*name=\"$failing\".*\)/-- \1/" "$conf"; then
+            echo "Error: failed to update dnsdist config" >&2
+            return 1
+        fi
     fi
     
     local backup_line
@@ -409,10 +431,10 @@ cmd_enforce() {
             echo "DNS interception rules (target: $target):"
             echo ""
             echo "--- nat PREROUTING (redirect DoT to pihole) ---"
-            sudo -S -p '' nft list chain ip nat PREROUTING 2>/dev/null | grep "$target" || echo "  (none)"
+            sudo nft list chain ip nat PREROUTING 2>/dev/null | grep "$target" || echo "  (none)"
             echo ""
             echo "--- filter FORWARD (block DoQu) ---"
-            sudo -S -p '' nft list chain ip filter FORWARD 2>/dev/null | grep "$target" || echo "  (none)"
+            sudo nft list chain ip filter FORWARD 2>/dev/null | grep "$target" || echo "  (none)"
             ;;
         on|enable|start)
             echo "Enabling DNS interception for $target..."
@@ -425,7 +447,7 @@ cmd_enforce() {
         off|disable|stop)
             echo "Removing DNS interception rules for $target..."
             local handles
-            handles=$(sudo -S -p '' nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oE 'handle [0-9]+' | sed 's/handle //')
+            handles=$(sudo nft -a list chain ip nat PREROUTING 2>/dev/null | grep "$target" | grep -oE 'handle [0-9]+' | sed 's/handle //')
             for handle in $handles; do
                 if ! sudo nft delete rule ip nat PREROUTING handle "$handle" 2>/dev/null; then
                     echo "Error: failed to delete nft rule handle $handle" >&2

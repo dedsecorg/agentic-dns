@@ -10,7 +10,7 @@ title: Commands
 | `agentic-dns status` | Show all DNS services, addresses, types, health |
 | `agentic-dns query <domain>` | Resolve through full chain |
 | `agentic-dns trace <domain>` | Trace DNS path with live packet capture |
-| `agentic-dns routes` | List current dnsdist routing rules |
+| `agentic-dns routes` | List Pi-hole upstreams (from `pihole.toml`) and current dnsdist routing rules |
 | `agentic-dns route add <name> <addr:port>` | Add upstream to dnsdist |
 | `agentic-dns route remove <name>` | Remove upstream from dnsdist |
 | `agentic-dns bypass <service> [backup]` | Bypass failing service |

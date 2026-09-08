@@ -22,6 +22,6 @@
 - `dns_query`: Test domain resolution through the pipeline.
 - `dns_trace`: Spawns live tcpdump packet capture on inter-service hops.
 - `dns_health`: Runs health check sweep across listeners.
-- `dns_routes`: Lists current dnsdist backend rules.
+- `dns_routes`: Lists Pi-hole upstreams (from `pihole.toml`) and current dnsdist backend rules.
 - `dns_pihole_log`: Queries SQLite query log.
 - `dns_bypass`: Auto-switches routing around failing upstreams.
