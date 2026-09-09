@@ -30,8 +30,12 @@ jobs:
         env:
           DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
         run: |
-          ./bin/deepsource report \
-            --analyzer=test-coverage \
-            --key=ruby \
-            --value-file=.deepsource/coverage/ruby.json \
-            --use-oidc
+          if [ -f .deepsource/coverage/ruby.json ]; then
+            ./bin/deepsource report \
+              --analyzer=test-coverage \
+              --key=ruby \
+              --value-file=.deepsource/coverage/ruby.json \
+              --use-oidc
+          else
+            echo "No coverage file found at .deepsource/coverage/ruby.json, skipping"
+          fi
