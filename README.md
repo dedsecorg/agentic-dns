@@ -315,4 +315,7 @@ MIT -- see [LICENSE](LICENSE).
 ## Related
 
 - **agentic-route** -- kernel policy routing reconciler (same author)
-- **hermes-dns** -- private fork with real IPs, same engine
+- **hermes-dns** -- private fork with real IPs, same engine# Test payment notification
+test
+test2
+test3
