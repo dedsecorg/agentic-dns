@@ -34,4 +34,4 @@ jobs:
             --analyzer=test-coverage \
             --key=ruby \
             --value-file=.deepsource/coverage/ruby.json \
-            --use-oidc || true
+            --use-oidc
