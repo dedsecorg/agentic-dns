@@ -21,10 +21,10 @@ This project uses Jekyll with the Minima theme for documentation, deployed to Gi
 
 ## Configuration
 
-- `_config.yml` — Jekyll configuration
-- `Gemfile` — Ruby dependencies (github-pages, jekyll-feed, jekyll-seo-tag)
-- `_layouts/default.html` — Custom layout with Context7 widget
-- `.github/workflows/pages.yml` — Deployment workflow
+- `_config.yml` -- Jekyll configuration
+- `Gemfile` -- Ruby dependencies (github-pages, jekyll-feed, jekyll-seo-tag)
+- `_layouts/default.html` -- Custom layout with Context7 widget
+- `.github/workflows/pages.yml` -- Deployment workflow
 
 ## Context7 Widget
 

@@ -33,13 +33,13 @@ Add to your MCP client config:
 
 When installed via Smithery, the following MCP tools are available:
 
-- `dns_status` — All services health + config
-- `dns_query` — Resolve domain through chain
-- `dns_trace` — Packet capture at each hop
-- `dns_route_add` — Add dnsdist upstream
-- `dns_route_remove` — Remove dnsdist upstream
-- `dns_bypass` — Failover service
-- `dns_enforce` — Phone DNS interception
-- `dns_pihole_log` — Pi-hole query log
+- `dns_status` -- All services health + config
+- `dns_query` -- Resolve domain through chain
+- `dns_trace` -- Packet capture at each hop
+- `dns_route_add` -- Add dnsdist upstream
+- `dns_route_remove` -- Remove dnsdist upstream
+- `dns_bypass` -- Failover service
+- `dns_enforce` -- Phone DNS interception
+- `dns_pihole_log` -- Pi-hole query log
 
 EOF 2>&1

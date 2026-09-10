@@ -18,6 +18,6 @@
 - [[agentic-route|Agentic Route]]
 
 ## Related Projects
-- [[agentic-route|Agentic Route]] — kernel policy routing reconciler (same author)
-- **hermes-dns** — private fork with real IPs, same engine
+- [[agentic-route|Agentic Route]] -- kernel policy routing reconciler (same author)
+- **hermes-dns** -- private fork with real IPs, same engine
 
