@@ -567,16 +567,23 @@ cmd_mcp() {
         case "$method" in
             "initialize")
                 # MCP handshake: client sends initialize first. Must echo back
-                # protocolVersion, capabilities, and serverInfo. Return the
-                # highest supported protocolVersion (we implement 2024-11-05).
+                # protocolVersion, capabilities, and serverInfo. Negotiate the
+                # protocolVersion: return the client's requested version if supported,
+                # otherwise our highest supported version (2024-11-05).
                 # Only respond if request has a valid id (string or number per JSON-RPC).
                 # Return -32600 for invalid id, suppress for notifications (no id).
                 if [ "$valid_id" = "true" ]; then
-                    printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}
-' "$req_id"
+                    local proto
+                    proto=$(echo "$line" | jq -c '
+                        .params.protocolVersion? as $requested
+                        | if ($requested | type) == "string" and $requested == "2024-11-05"
+                          then $requested
+                          else "2024-11-05"
+                          end
+                    ' 2>/dev/null)
+                    printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%s,"capabilities":{"tools":{}},"serverInfo":{"name":"agentic-dns","version":"1.0.0"}}}\n' "$req_id" "$proto"
                 elif [ "$has_id" = "true" ]; then
-                    printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"Invalid Request: id must be string or number"}}
-' "$req_id"
+                    printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"Invalid Request: id must be string or number"}}\n' "$req_id"
                 fi
                 ;;
             "notifications/initialized"|"notifications/"*)
