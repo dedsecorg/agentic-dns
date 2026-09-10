@@ -1,25 +1,11 @@
-# Codacy configuration for agentic-dns
-# https://docs.codacy.com/v13.0/repositories-configure/codacy-configuration-file/
-
 engines:
   bandit:
     enabled: true
-    language: python
   eslint:
     enabled: true
   shellcheck:
-    enabled: true
-  checkmarx:
     enabled: true
 
 exclude_patterns:
   - "dist/**"
   - "node_modules/**"
-  - "*.min.js"
-  - "*.bundle.js"
-
-tools:
-  shellcheck:
-    enabled: true
-    file_extensions:
-      - ".sh"
