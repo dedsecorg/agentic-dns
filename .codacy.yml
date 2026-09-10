@@ -1,0 +1,11 @@
+engines:
+  bandit:
+    enabled: true
+  eslint:
+    enabled: true
+  shellcheck:
+    enabled: true
+
+exclude_patterns:
+  - "dist/**"
+  - "node_modules/**"

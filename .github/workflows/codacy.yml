@@ -1,0 +1,32 @@
+name: Codacy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codacy:
+    name: Codacy Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+
+      - name: Install Codacy Cloud CLI
+        run: npm install -g @codacy/codacy-cloud-cli
+
+      - name: Run Codacy analysis
+        env:
+          CODACY_API_TOKEN: ${{ secrets.CODACY_API_KEY }}
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          codacy issues gh "$OWNER" "$REPO" --output json || true
