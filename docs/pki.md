@@ -10,8 +10,8 @@ certificate:
 
 | Surface | Process | Cert / key / CA (defaults) |
 |---------|---------|----------------------------|
-| REST API `:8099` | `agentic-dns api` (socat `OPENSSL-LISTEN`) | `AGENTIC_DNS_TLS_CERT` / `AGENTIC_DNS_TLS_KEY` / `AGENTIC_DNS_TLS_CA` → `/etc/agentic-dns/certs/{api.crt,api.key,ca.crt}` |
-| DoT proxy `:853` | `agentic-dns-server --dot-proxy` (rustls) | `--cert-file` / `--key-file` / `--client-ca` → `/etc/agentic-dns/certs/{dot.crt,dot.key,ca.crt}` |
+| REST API `:8099` | `agentic-dns api` (socat `OPENSSL-LISTEN`) | `AGENTIC_DNS_TLS_CERT` / `AGENTIC_DNS_TLS_KEY` / `AGENTIC_DNS_TLS_CA` -> `/etc/agentic-dns/certs/{api.crt,api.key,ca.crt}` |
+| DoT proxy `:853` | `agentic-dns-server --dot-proxy` (rustls) | `--cert-file` / `--key-file` / `--client-ca` -> `/etc/agentic-dns/certs/{dot.crt,dot.key,ca.crt}` |
 | Rust REST API `:8099` | `agentic-dns-server` (no mode flag; rustls + hyper) | same `--cert-file` / `--key-file` / `--client-ca` as the DoT proxy |
 
 The Rust binary has no plaintext HTTP mode: `agentic-dns-server` without
@@ -29,14 +29,14 @@ back to plaintext.
 
 ## Threat model
 
-- **Authentication** — X.509 client certs. A peer without a cert chaining to
+- **Authentication** -- X.509 client certs. A peer without a cert chaining to
   `ca.crt` is rejected during the TLS handshake, before any handler code runs
   (socat spawns `api-handler` only after `verify=1` passes; rustls rejects in
   `accept()`). Bash header parsing is never on the auth path.
-- **Harvest-now-decrypt-later** — key exchange is hybrid post-quantum
+- **Harvest-now-decrypt-later** -- key exchange is hybrid post-quantum
   X25519MLKEM768. The Rust DoT server enforces it (`--allow-classical-kx` to
   also offer X25519 during client migration). The socat surface is pinned to
-  TLS 1.3 and inherits whatever groups the host OpenSSL offers: OpenSSL ≥ 3.5
+  TLS 1.3 and inherits whatever groups the host OpenSSL offers: OpenSSL >= 3.5
   negotiates X25519MLKEM768 by default; older OpenSSL gives classical
   TLS 1.3 mTLS now and PQ on upgrade, with no config change.
 - **Certificates stay classical** (ECDSA P-256 / Ed25519). HNDL is a
@@ -111,7 +111,7 @@ openssl s_client -connect 127.0.0.1:853 -CAfile ca.crt </dev/null 2>&1 | grep al
   (`systemctl restart agentic-dns-api agentic-dns-server`). socat and rustls
   read the files at start-up only.
 - **CA (10 y):** create a new CA, issue new server certs, and append the new
-  CA to `ca.crt` (it is a bundle — both rustls `RootCertStore` and OpenSSL
+  CA to `ca.crt` (it is a bundle -- both rustls `RootCertStore` and OpenSSL
   `cafile` accept concatenated PEM) so old and new clients overlap. Re-issue
   client certs, then drop the old CA from the bundle and restart.
 
@@ -122,7 +122,7 @@ There is no CRL/OCSP wiring by design (no new dependencies). Revocation is:
 1. **Short lifetimes.** 90-day client certs bound the blast radius.
 2. **CA roll.** To revoke one client immediately, roll the CA (above) and
    re-issue every *other* client. With a handful of agents this is minutes.
-3. **Emergency:** delete `ca.crt` and restart the service — every peer is
+3. **Emergency:** delete `ca.crt` and restart the service -- every peer is
    refused until a CA is restored (fail closed).
 
 Because the REST API and DoT proxy only bind on loopback / Tailscale, a

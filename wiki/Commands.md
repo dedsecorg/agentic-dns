@@ -36,7 +36,7 @@ VPN DNS (10.2.0.1): up
 ## Health Checks
 
 Each service checked via active DNS query:
-- `up` — listening and responding
-- `unhealthy` — listening but query failed
-- `down` — not listening
+- `up` -- listening and responding
+- `unhealthy` -- listening but query failed
+- `down` -- not listening
 

@@ -110,4 +110,4 @@ None currently tracked. Check [GitHub Security Advisories](https://github.com/de
 
 ## Scope
 
-This policy covers the agentic-dns CLI, daemon, Rust DoT/mTLS server, and configuration generators. It does not cover upstream dependencies (CoreDNS, dnsdist, Unbound, Stubby, DNSCrypt-Proxy, kernel Netlink) — report those to their respective maintainers.
+This policy covers the agentic-dns CLI, daemon, Rust DoT/mTLS server, and configuration generators. It does not cover upstream dependencies (CoreDNS, dnsdist, Unbound, Stubby, DNSCrypt-Proxy, kernel Netlink) -- report those to their respective maintainers.

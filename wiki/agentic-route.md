@@ -1,6 +1,6 @@
 # Agentic Route
 
-**Declarative kernel policy-routing reconciler.** Define desired routing state in JSON; the daemon continuously reconciles the Linux kernel routing tables and policy rules to match — event-driven, idempotent, and hardened for production.
+**Declarative kernel policy-routing reconciler.** Define desired routing state in JSON; the daemon continuously reconciles the Linux kernel routing tables and policy rules to match -- event-driven, idempotent, and hardened for production.
 
 ## Quick Links
 - [GitHub Repository](https://github.com/dedsecorg/agentic-route)
