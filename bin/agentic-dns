@@ -93,23 +93,29 @@ log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
 is_listening() {
     local addr="$1" port="$2"
-    # For remote addresses (VPN DNS), check if port is reachable
+    # Local addresses: 127.x.x.x, localhost, 0.0.0.0
     case "$addr" in
-        127.0.0.1|0.0.0.0|*)
-            if [ "$addr" != "$VPN_DNS" ]; then
-                # Local service - check column 5 (Local Address:Port) like Rust ss_output_has_port
-                ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($5,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
-            fi
+        127.*|localhost|0.0.0.0)
+            # Local service - check column 5 (Local Address:Port) like Rust ss_output_has_port
+            ss -tulnp 2>/dev/null | awk -v port="$port" 'NR>1 {n=split($5,a,":"); if (a[n]==port) found=1} END {exit !found}' && return 0
+            return 1
             ;;
     esac
-    # For remote addresses, try a DNS query
-    [ "$addr" = "$VPN_DNS" ] && dns_query "example.com" "$addr" "$port" >/dev/null 2>&1 && return 0
+    # Remote addresses (VPN DNS, nebula mesh DNS): use dns_query to probe
+    dns_query "example.com" "$addr" "$port" >/dev/null 2>&1 && return 0
     return 1
 }
 
 dns_query() {
     local domain="$1" addr="${2:-127.0.0.1}" port="${3:-53}"
+    # pipefail ensures timeout/dig failures propagate past head -1
+    local _pipefail
+    _pipefail=$(set +o | grep pipefail || true)
+    set -o pipefail
     timeout 5 dig +short "$domain" @"$addr" -p "$port" 2>/dev/null | head -1
+    local rc=$?
+    $_pipefail 2>/dev/null || true
+    return $rc
 }
 
 get_service_status() {
@@ -137,7 +143,7 @@ discover_services() {
     local found=""
     for svc in "${SERVICES[@]}"; do
         IFS='|' read -r name port addr type upstream extra <<< "$svc"
-        if is_listening "$addr" "$port" 2>/dev/null || is_listening "127.0.0.1" "$port" 2>/dev/null; then
+        if is_listening "$addr" "$port" 2>/dev/null; then
             found="$found $name"
         fi
     done
@@ -153,7 +159,7 @@ cmd_status() {
     for svc in "${SERVICES[@]}"; do
         IFS='|' read -r name port addr type upstream extra <<< "$svc"
         local listening="NO"
-        if is_listening "$addr" "$port" 2>/dev/null || is_listening "127.0.0.1" "$port" 2>/dev/null; then
+        if is_listening "$addr" "$port" 2>/dev/null; then
             listening="YES"
         fi
         local status
@@ -171,11 +177,12 @@ cmd_status() {
     local found
     found=$(discover_services)
     echo "Active DNS chain:"
+    # nebula-dns is a mesh DNS peer (clients query it directly), not downstream from pihole
+    if echo "$found" | grep -qw nebula-dns; then
+        echo "  nebula-dns (192.168.100.1:53) [mesh DNS peer]"
+    fi
     if echo "$found" | grep -qw pihole && echo "$found" | grep -qw coredns; then
         echo "  pihole (:53) -> coredns (:5352) [split-horizon for mesh zones]"
-        if echo "$found" | grep -qw nebula-dns; then
-            echo "    -> nebula-dns (192.168.100.1:53) [mesh DNS upstream]"
-        fi
         if echo "$found" | grep -qw dnsdist; then
             echo "    -> dnsdist (:5330)"
         fi
