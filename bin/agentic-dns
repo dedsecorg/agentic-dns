@@ -79,6 +79,7 @@ discover_pihole_upstreams() {
 # Service definitions: name|port|addr|type|upstream
 SERVICES=(
     "pihole|53|${PIHOLE_HOST}|forwarder|coredns"
+    "nebula-dns|53|192.168.100.1|mesh-dns|pihole"
     "coredns|5352|127.0.0.1|split-horizon|dnsdist"
     "dnsdist|5330|127.0.0.1|loadbalancer|unbound,dnscrypt"
     "unbound|5335|127.0.0.1|resolver|vpn-dns"
@@ -172,6 +173,9 @@ cmd_status() {
     echo "Active DNS chain:"
     if echo "$found" | grep -qw pihole && echo "$found" | grep -qw coredns; then
         echo "  pihole (:53) -> coredns (:5352) [split-horizon for mesh zones]"
+        if echo "$found" | grep -qw nebula-dns; then
+            echo "    -> nebula-dns (192.168.100.1:53) [mesh DNS upstream]"
+        fi
         if echo "$found" | grep -qw dnsdist; then
             echo "    -> dnsdist (:5330)"
         fi
