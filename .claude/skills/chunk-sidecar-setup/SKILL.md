@@ -343,7 +343,7 @@ When Stage 9 validate passes, tell the user:
 ## Troubleshooting
 
 - **`Could not select an organization` / `no interactive terminal`** -- OrgID is missing. Return to Stage 2.
-- **Auth errors (401/403, "token invalid")** -- run `chunk auth status`. If the CircleCI token is stale or missing, re-run `chunk auth login` ([Logging in](#logging-in)). Never dump env vars.
+- **Auth errors (401/403, "token invalid")** -- run `chunk auth status`. If the CircleCI source is `Environment`, update or unset `CIRCLE_TOKEN`, then re-run the status check; do not log in or store another keychain token. Otherwise, if the CircleCI token is stale or missing, re-run `chunk auth login` ([Logging in](#logging-in)). Never dump env vars.
 - **`permission denied (publickey)` on sync or exec** -- run `chunk sidecar add-ssh-key --public-key-file ~/.ssh/chunk_ai.pub`. If it persists, tell the user to remove `~/.ssh/chunk_ai*` to regenerate the keypair on next use.
 - **`context deadline exceeded`** -- sidecar is unhealthy. Run `chunk sidecar forget` and restart from Stage 4 with a new sidecar.
 - **Missing binary after `chunk sidecar setup`** -- install with `chunk validate --remote --cmd "<install>"`, verify with `chunk validate`, then re-snapshot (Stage 8 onward).

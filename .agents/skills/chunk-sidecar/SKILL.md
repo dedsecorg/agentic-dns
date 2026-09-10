@@ -237,7 +237,7 @@ If `circleci-testsuite` is not installed, fall back to manual validation (see v1
 ## Troubleshooting
 
 - **`Could not select an organization` / `no interactive terminal`** -- orgID missing. Run `chunk org list --json`, auto-select if there is one org, otherwise ask once, then `chunk config set orgID <id>`.
-- **Auth errors (401/403, "token invalid")** -- run `chunk auth status`. If the CircleCI token is stale or missing, re-run `chunk auth login` ([Logging in](#logging-in)); otherwise follow the printed remediation.
+- **Auth errors (401/403, "token invalid")** -- run `chunk auth status`. If the CircleCI source is `Environment`, update or unset `CIRCLE_TOKEN`, then re-run the status check; do not log in or store another keychain token. Otherwise, if the CircleCI token is stale or missing, re-run `chunk auth login` ([Logging in](#logging-in)); follow the printed remediation for other errors.
 - **Sidecar 404 on `current` / `sync` / `validate`** -- sidecar was deleted externally. Run `chunk sidecar forget`, return to Step 0.
 - **`permission denied (publickey)`** -- run `chunk sidecar add-ssh-key --public-key-file ~/.ssh/chunk_ai.pub`. If it persists, tell user to remove `~/.ssh/chunk_ai*` to regenerate the keypair.
 - **`context deadline exceeded` on SSH or API calls** -- sidecar is unhealthy. If `sidecarImage` is set, create a fresh one from snapshot. Otherwise `chunk sidecar forget` and redo setup via `chunk-sidecar-setup`.
