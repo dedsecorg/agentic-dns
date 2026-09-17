@@ -10,7 +10,7 @@
 PIHOLE_HOST="${PIHOLE_HOST:-127.0.0.1}"
 if [ -z "$PIHOLE_API_KEY" ]; then
     if [ -f "/etc/pihole/pihole-api-key.txt" ]; then
-        PIHOLE_API_KEY=$(cat /etc/pihole/pihole-api-key.txt 2>/dev/null | tr -d '\r\n')
+        PIHOLE_API_KEY=$(tr -d '\r\n' < /etc/pihole/pihole-api-key.txt 2>/dev/null)
     fi
 fi
 API_PORT="${AGENTIC_DNS_API_PORT:-8099}"
@@ -142,7 +142,7 @@ get_service_status() {
 discover_services() {
     local found=""
     for svc in "${SERVICES[@]}"; do
-        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        IFS='|' read -r name port addr type upstream _ <<< "$svc"
         if is_listening "$addr" "$port" 2>/dev/null; then
             found="$found $name"
         fi
@@ -157,7 +157,7 @@ cmd_status() {
     printf "%-18s %-25s %-16s %-12s %s\n" "-------" "-------" "----" "------" "---------"
     
     for svc in "${SERVICES[@]}"; do
-        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        IFS='|' read -r name port addr type upstream _ <<< "$svc"
         local listening="NO"
         if is_listening "$addr" "$port" 2>/dev/null; then
             listening="YES"
@@ -375,7 +375,7 @@ cmd_pihole_log() {
 cmd_health() {
     echo "Health checks:"
     for svc in "${SERVICES[@]}"; do
-        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        IFS='|' read -r name port addr type upstream _ <<< "$svc"
         local listening="NO"
         if is_listening "$addr" "$port" 2>/dev/null; then
             listening="YES"
@@ -400,7 +400,7 @@ cmd_tag() {
     local found
     found=$(discover_services)
     for svc in "${SERVICES[@]}"; do
-        IFS='|' read -r name port addr type upstream extra <<< "$svc"
+        IFS='|' read -r name port addr type upstream _ <<< "$svc"
         local tags=""
         echo "$found" | grep -qw "$name" && tags="${tags}listening "
         [ "$type" = "forwarder" ] && tags="${tags}entry-point "
@@ -492,6 +492,57 @@ cmd_enforce() {
             echo "Usage: agentic-dns enforce <on|off|status|clean> [target_ip]"
             ;;
     esac
+}
+
+DEADMAN_BACKUP_DIR="/tmp/agentic_dns_deadman_backup"
+DEADMAN_PID_FILE="/tmp/agentic_dns_deadman.pid"
+
+cmd_deadman_start() {
+    echo "Starting deadman switch (60 seconds)..."
+    if [ -f "$DEADMAN_PID_FILE" ]; then
+        if kill -0 "$(cat "$DEADMAN_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+            echo "Error: Deadman switch is already running." >&2
+            return 1
+        fi
+    fi
+
+    # Backup critical config
+    mkdir -p "$DEADMAN_BACKUP_DIR"
+    cp -p /etc/dnsdist/dnsdist.conf "$DEADMAN_BACKUP_DIR/" 2>/dev/null || true
+    # We could backup nftables rules here too if needed: sudo nft list ruleset > "$DEADMAN_BACKUP_DIR/nftables.rules" 2>/dev/null || true
+
+    # Launch background countdown
+    (
+        sleep 60
+        # If we reach here without being killed by commit, rollback
+        echo "[Deadman] Timeout reached! Rolling back network configurations..." >&2
+        if [ -f "$DEADMAN_BACKUP_DIR/dnsdist.conf" ]; then
+            sudo cp -p "$DEADMAN_BACKUP_DIR/dnsdist.conf" /etc/dnsdist/dnsdist.conf
+            sudo systemctl restart dnsdist 2>/dev/null || true
+        fi
+        rm -rf "$DEADMAN_BACKUP_DIR"
+        rm -f "$DEADMAN_PID_FILE"
+    ) &
+    echo $! > "$DEADMAN_PID_FILE"
+    echo "Deadman switch armed. Call sys_deadman_commit within 60 seconds."
+}
+
+cmd_deadman_commit() {
+    echo "Committing network changes (disarming deadman switch)..."
+    if [ -f "$DEADMAN_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$DEADMAN_PID_FILE" 2>/dev/null)
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            echo "Deadman switch successfully canceled."
+        else
+            echo "Deadman switch was not active (or already timed out)."
+        fi
+        rm -f "$DEADMAN_PID_FILE"
+    else
+        echo "No deadman switch active."
+    fi
+    rm -rf "$DEADMAN_BACKUP_DIR"
 }
 
 cmd_api() {
@@ -614,7 +665,7 @@ cmd_mcp() {
                 # Only respond if request has a valid id (string or number per JSON-RPC).
                 # Return -32600 for invalid id, suppress for notifications (no id).
                 if [ "$valid_id" = "true" ]; then
-                    printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}}]}}
+                    printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}},{"name":"sys_exec","description":"Execute an arbitrary shell command (agentic permissions)","inputSchema":{"type":"object","properties":{"command":{"type":"string","description":"Command to run"}},"required":["command"]}},{"name":"sys_deadman_start","description":"Start a 60-second countdown deadman switch. If sys_deadman_commit is not called within 60 seconds, changes are reverted.","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"sys_deadman_commit","description":"Commit network changes and cancel the deadman switch countdown.","inputSchema":{"type":"object","properties":{},"required":[]}}]}}
 ' "$req_id"
                 elif [ "$has_id" = "true" ]; then
                     printf '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request: id must be string or number"}}
@@ -625,11 +676,12 @@ cmd_mcp() {
                 # Only respond if request has a valid id (string or number per JSON-RPC).
                 # Return -32600 for invalid id, suppress for notifications (no id).
                 if [ "$valid_id" = "true" ]; then
-                    local tool domain service backup
+                    local tool domain service backup sys_command
                     tool=$(echo "$line" | jq -r '.params.name // .name // empty' 2>/dev/null)
                     domain=$(echo "$line" | jq -r '.params.arguments.domain // .domain // "example.com"' 2>/dev/null)
                     service=$(echo "$line" | jq -r '.params.arguments.service // .service // "stubby"' 2>/dev/null)
                     backup=$(echo "$line" | jq -r '.params.arguments.backup // .backup // "unbound"' 2>/dev/null)
+                    sys_command=$(echo "$line" | jq -r '.params.arguments.command // .command // empty' 2>/dev/null)
                     
                     case "$tool" in
                         "dns_status")
@@ -665,6 +717,25 @@ cmd_mcp() {
                         "dns_bypass")
                             local out
                             out=$(cmd_bypass "$service" "$backup" 2>&1)
+                            echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                            ;;
+                        "sys_exec")
+                            local out
+                            if [ -n "$sys_command" ]; then
+                                out=$(eval "$sys_command" 2>&1 || echo "Command failed with exit code $?")
+                            else
+                                out="Error: No command provided"
+                            fi
+                            echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                            ;;
+                        "sys_deadman_start")
+                            local out
+                            out=$(cmd_deadman_start 2>&1)
+                            echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
+                            ;;
+                        "sys_deadman_commit")
+                            local out
+                            out=$(cmd_deadman_commit 2>&1)
                             echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
                             ;;
                         *)
