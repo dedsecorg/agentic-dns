@@ -720,9 +720,19 @@ cmd_mcp() {
                             echo "{\"jsonrpc\":\"2.0\",\"id\":${req_id},\"result\":{\"content\":[{\"type\":\"text\",\"text\":$(echo "$out" | jq -Rs .)}]}}"
                             ;;
                         "sys_exec")
-                            local out
+                            local out cmd
                             if [ -n "$sys_command" ]; then
-                                out=$(eval "$sys_command" 2>&1 || echo "Command failed with exit code $?")
+                                # Parse into positional parameters without eval; then enforce allowlist.
+                                set -- $sys_command
+                                cmd="$1"
+                                case "$cmd" in
+                                    "ip"|"ss"|"ping"|"traceroute"|"dig"|"nslookup"|"resolvectl"|"systemctl"|"journalctl")
+                                        out=$("$@" 2>&1 || echo "Command failed with exit code $?")
+                                        ;;
+                                    *)
+                                        out="Error: Command not allowed"
+                                        ;;
+                                esac
                             else
                                 out="Error: No command provided"
                             fi
