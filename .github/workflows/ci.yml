@@ -27,6 +27,11 @@ jobs:
       - name: Syntax Check
         run: bash -n bin/agentic-dns
         
+      - name: ShellCheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck bin/agentic-dns install.sh
+
       - name: Run Test Suite
         run: ./tests/test_cli.sh
 
