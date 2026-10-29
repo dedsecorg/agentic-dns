@@ -739,6 +739,17 @@ cmd_mcp() {
                                 _cmd="$1"
                                 shift
 
+                                is_uint() {
+                                    case "${1:-}" in
+                                        ''|*[!0-9]*)
+                                            return 1
+                                            ;;
+                                        *)
+                                            return 0
+                                            ;;
+                                    esac
+                                }
+
                                 # Reject obviously dangerous shell/control metacharacters in tokens.
                                 for _a in "$@"; do
                                     case "$_a" in
@@ -763,10 +774,107 @@ cmd_mcp() {
                                         return 1
                                         ;;
                                     "ss")
+                                        # Read-only networking views only.
+                                        while [ "$#" -gt 0 ]; do
+                                            case "$1" in
+                                                -h|-V|-l|-a|-t|-u|-w|-x|-4|-6|-n|-p)
+                                                    shift
+                                                    ;;
+                                                state)
+                                                    shift
+                                                    [ -n "${1:-}" ] || return 1
+                                                    shift
+                                                    ;;
+                                                "")
+                                                    shift
+                                                    ;;
+                                                *)
+                                                    return 1
+                                                    ;;
+                                            esac
+                                        done
                                         return 0
                                         ;;
-                                    "ping"|"traceroute"|"dig"|"nslookup")
+                                    "ping")
+                                        local _target_seen=0
+                                        while [ "$#" -gt 0 ]; do
+                                            case "$1" in
+                                                -c|-W|-w)
+                                                    shift
+                                                    is_uint "${1:-}" || return 1
+                                                    shift
+                                                    ;;
+                                                -I)
+                                                    shift
+                                                    [ -n "${1:-}" ] || return 1
+                                                    shift
+                                                    ;;
+                                                -4|-6|-n)
+                                                    shift
+                                                    ;;
+                                                *)
+                                                    [ "$_target_seen" -eq 0 ] || return 1
+                                                    _target_seen=1
+                                                    shift
+                                                    ;;
+                                            esac
+                                        done
+                                        [ "$_target_seen" -eq 1 ] || return 1
                                         return 0
+                                        ;;
+                                    "traceroute")
+                                        local _tr_target_seen=0
+                                        while [ "$#" -gt 0 ]; do
+                                            case "$1" in
+                                                -m|-w|-q)
+                                                    shift
+                                                    is_uint "${1:-}" || return 1
+                                                    shift
+                                                    ;;
+                                                -4|-6|-n)
+                                                    shift
+                                                    ;;
+                                                *)
+                                                    [ "$_tr_target_seen" -eq 0 ] || return 1
+                                                    _tr_target_seen=1
+                                                    shift
+                                                    ;;
+                                            esac
+                                        done
+                                        [ "$_tr_target_seen" -eq 1 ] || return 1
+                                        return 0
+                                        ;;
+                                    "dig")
+                                        local _dig_target_seen=0
+                                        while [ "$#" -gt 0 ]; do
+                                            case "$1" in
+                                                +short|+time=*|+tries=*|+tcp|+notcp|-4|-6)
+                                                    shift
+                                                    ;;
+                                                -t|-c)
+                                                    shift
+                                                    [ -n "${1:-}" ] || return 1
+                                                    shift
+                                                    ;;
+                                                *)
+                                                    [ "$_dig_target_seen" -eq 0 ] || return 1
+                                                    _dig_target_seen=1
+                                                    shift
+                                                    ;;
+                                            esac
+                                        done
+                                        [ "$_dig_target_seen" -eq 1 ] || return 1
+                                        return 0
+                                        ;;
+                                    "nslookup")
+                                        case "$#" in
+                                            1|2)
+                                                return 0
+                                                ;;
+                                            *)
+                                                return 1
+                                                ;;
+                                        esac
                                         ;;
                                     "resolvectl")
                                         case "${1:-}" in
@@ -786,7 +894,55 @@ cmd_mcp() {
                                         return 1
                                         ;;
                                     "journalctl")
-                                        return 0
+                                        # Strictly allow scoped unit reads:
+                                        # journalctl -u <known-unit> -n <N> [--no-pager] [-o short|short-iso|cat]
+                                        local _unit="" _n="" _outfmt="" _seen_u=0 _seen_n=0
+                                        while [ "$#" -gt 0 ]; do
+                                            case "$1" in
+                                                -u|--unit)
+                                                    [ "$_seen_u" -eq 0 ] || return 1
+                                                    _seen_u=1
+                                                    shift
+                                                    _unit="${1:-}"
+                                                    [ -n "$_unit" ] || return 1
+                                                    shift
+                                                    ;;
+                                                -n|--lines)
+                                                    [ "$_seen_n" -eq 0 ] || return 1
+                                                    _seen_n=1
+                                                    shift
+                                                    _n="${1:-}"
+                                                    is_uint "$_n" || return 1
+                                                    shift
+                                                    ;;
+                                                --no-pager)
+                                                    shift
+                                                    ;;
+                                                -o|--output)
+                                                    shift
+                                                    _outfmt="${1:-}"
+                                                    case "$_outfmt" in
+                                                        short|short-iso|cat)
+                                                            ;;
+                                                        *)
+                                                            return 1
+                                                            ;;
+                                                    esac
+                                                    shift
+                                                    ;;
+                                                *)
+                                                    return 1
+                                                    ;;
+                                            esac
+                                        done
+                                        [ "$_seen_u" -eq 1 ] || return 1
+                                        [ "$_seen_n" -eq 1 ] || return 1
+                                        case "$_unit" in
+                                            pihole-FTL.service|pihole.service|unbound.service|stubby.service|dnscrypt-proxy.service|coredns.service|dnsdist.service|systemd-resolved.service|NetworkManager.service)
+                                                return 0
+                                                ;;
+                                        esac
+                                        return 1
                                         ;;
                                 esac
                                 return 1
