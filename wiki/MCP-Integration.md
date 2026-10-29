@@ -20,9 +20,6 @@ Runs a read-write stdio JSON-RPC 2.0 server. Compatible with Claude Desktop, Cur
 | `dns_bypass` | Failover service | `{"service": "unbound", "backup": "dnscrypt"}` |
 | `dns_enforce` | Phone DNS interception | `{"action": "on", "ip": "100.87.74.22"}` |
 | `dns_pihole_log` | Pi-hole query log | `{"limit": 100}` |
-| `sys_exec` | Allowlisted read-only diagnostics (ip/ss/ping/traceroute/dig/nslookup/resolvectl/systemctl/journalctl), no shell, 30s timeout | `{"command": "ip route show"}` |
-| `sys_deadman_start` | Snapshot nftables + dnsdist config; restore both after 60s unless committed | `{}` |
-| `sys_deadman_commit` | Disarm the deadman switch, keeping changes | `{}` |
 
 ## Example Session
 

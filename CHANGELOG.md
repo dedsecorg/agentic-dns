@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- MCP deadman switch (`sys_deadman_start` / `sys_deadman_commit`): snapshots the nftables ruleset and dnsdist config, and restores both if not committed within 60 seconds. Refuses to arm if the snapshot fails.
-- MCP `sys_exec`: allowlisted read-only diagnostics (`ip`/`ss`/`ping`/`traceroute`/`dig`/`nslookup`/`resolvectl`/`systemctl`/`journalctl`), no shell, 30s timeout.
+- Deadman switch mechanism for safe remote network manipulation by AI agents.
+- Full system execution capabilities via new MCP tools.
 - CI/CD workflow enhancements, including ShellCheck.
 - Pull request template for standardized contributions.
+
+## [1.6.0] - 2024-03-20 (Example)
+### Added
+- Agentic AI-Native DNS Routing, Diagnostics & Telemetry.
+- OCI Container (GHCR) multi-architecture builds.
+- CLI, REST API, and stdio MCP integration.
+- Rust DoT/mTLS proxy server.
