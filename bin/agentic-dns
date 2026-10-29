@@ -494,7 +494,8 @@ cmd_enforce() {
     esac
 }
 
-DEADMAN_BACKUP_DIR="/tmp/agentic_dns_deadman_backup"
+DEADMAN_BACKUP_BASE="/var/lib/agentic-dns"
+DEADMAN_BACKUP_STATE_FILE="/tmp/agentic_dns_deadman_backup_dir"
 DEADMAN_PID_FILE="/tmp/agentic_dns_deadman.pid"
 
 cmd_deadman_start() {
@@ -506,21 +507,29 @@ cmd_deadman_start() {
         fi
     fi
 
-    # Backup critical config
-    mkdir -p "$DEADMAN_BACKUP_DIR"
-    cp -p /etc/dnsdist/dnsdist.conf "$DEADMAN_BACKUP_DIR/" 2>/dev/null || true
-    # We could backup nftables rules here too if needed: sudo nft list ruleset > "$DEADMAN_BACKUP_DIR/nftables.rules" 2>/dev/null || true
+    # Backup critical config in a unique, restricted directory
+    local backup_dir
+    mkdir -p "$DEADMAN_BACKUP_BASE" 2>/dev/null || true
+    backup_dir=$(mktemp -d "$DEADMAN_BACKUP_BASE/deadman.XXXXXX" 2>/dev/null || mktemp -d "/tmp/agentic_dns_deadman.XXXXXX")
+    chmod 700 "$backup_dir" 2>/dev/null || true
+    echo "$backup_dir" > "$DEADMAN_BACKUP_STATE_FILE"
+    cp -p /etc/dnsdist/dnsdist.conf "$backup_dir/" 2>/dev/null || true
+    # We could backup nftables rules here too if needed: sudo nft list ruleset > "$backup_dir/nftables.rules" 2>/dev/null || true
 
     # Launch background countdown
     (
         sleep 60
         # If we reach here without being killed by commit, rollback
         echo "[Deadman] Timeout reached! Rolling back network configurations..." >&2
-        if [ -f "$DEADMAN_BACKUP_DIR/dnsdist.conf" ]; then
-            sudo cp -p "$DEADMAN_BACKUP_DIR/dnsdist.conf" /etc/dnsdist/dnsdist.conf
+        local rollback_dir rollback_file
+        rollback_dir=$(cat "$DEADMAN_BACKUP_STATE_FILE" 2>/dev/null)
+        rollback_file="$rollback_dir/dnsdist.conf"
+        if [ -n "$rollback_dir" ] && [ -f "$rollback_file" ] && [ ! -L "$rollback_file" ] && [ "$(stat -c '%u' "$rollback_file" 2>/dev/null)" = "$(id -u)" ]; then
+            sudo cp -p "$rollback_file" /etc/dnsdist/dnsdist.conf
             sudo systemctl restart dnsdist 2>/dev/null || true
         fi
-        rm -rf "$DEADMAN_BACKUP_DIR"
+        rm -rf "$rollback_dir"
+        rm -f "$DEADMAN_BACKUP_STATE_FILE"
         rm -f "$DEADMAN_PID_FILE"
     ) &
     echo $! > "$DEADMAN_PID_FILE"
@@ -542,7 +551,10 @@ cmd_deadman_commit() {
     else
         echo "No deadman switch active."
     fi
-    rm -rf "$DEADMAN_BACKUP_DIR"
+    local backup_dir
+    backup_dir=$(cat "$DEADMAN_BACKUP_STATE_FILE" 2>/dev/null)
+    rm -rf "$backup_dir"
+    rm -f "$DEADMAN_BACKUP_STATE_FILE"
 }
 
 cmd_api() {
