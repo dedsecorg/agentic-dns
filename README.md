@@ -235,6 +235,8 @@ Tools exposed:
 - `dns_bypass` -- failover service
 - `dns_enforce` -- phone DNS interception
 - `dns_pihole_log` -- Pi-hole query log
+- `sys_exec` -- allowlisted read-only diagnostics (no shell, 30s timeout)
+- `sys_deadman_start` / `sys_deadman_commit` -- snapshot nftables + dnsdist config, auto-restore after 60s unless committed
 
 ---
 
