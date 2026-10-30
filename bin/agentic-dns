@@ -494,67 +494,124 @@ cmd_enforce() {
     esac
 }
 
-DEADMAN_BACKUP_BASE="/var/lib/agentic-dns"
-DEADMAN_BACKUP_STATE_FILE="/tmp/agentic_dns_deadman_backup_dir"
-DEADMAN_PID_FILE="/tmp/agentic_dns_deadman.pid"
+DEADMAN_SECONDS="${AGENTIC_DNS_DEADMAN_SECONDS:-60}"
+DEADMAN_DNSDIST_CONF="${AGENTIC_DNS_DNSDIST_CONF:-/etc/dnsdist/dnsdist.conf}"
+
+# Per-user state dir; refuse anything we do not own (symlink / pre-created dir).
+deadman_state_dir() {
+    local dir="${AGENTIC_DNS_STATE_DIR:-${XDG_RUNTIME_DIR:-/tmp}/agentic-dns-$(id -u)}"
+    if ! { [ -d "$dir" ] || mkdir -m 700 "$dir"; } || [ -L "$dir" ] || [ ! -d "$dir" ] \
+        || [ "$(stat -c '%u' "$dir" 2>/dev/null)" != "$(id -u)" ]; then
+        echo "Error: deadman state dir $dir is not a directory owned by $(id -u)" >&2
+        return 1
+    fi
+    chmod 700 "$dir" || return 1
+    echo "$dir"
+}
+
+deadman_rollback() {
+    local backup_dir="$1"
+    echo "[Deadman] $(date -u +%FT%TZ) timeout reached, rolling back nftables + dnsdist from $backup_dir"
+    local f rc=0
+    for f in nftables.rules dnsdist.conf; do
+        if [ ! -f "$backup_dir/$f" ] || [ -L "$backup_dir/$f" ] \
+            || [ "$(stat -c '%u' "$backup_dir/$f" 2>/dev/null)" != "$(id -u)" ]; then
+            echo "[Deadman] ERROR: backup $backup_dir/$f missing or not owned by us; NOT restored"
+            rc=1
+        fi
+    done
+    [ "$rc" -eq 0 ] || return 1
+    # Atomic: nft -f applies flush + restore as a single transaction.
+    if ! { echo "flush ruleset"; cat "$backup_dir/nftables.rules"; } | sudo nft -f -; then
+        echo "[Deadman] ERROR: nftables restore failed"
+        rc=1
+    fi
+    if ! sudo cp "$backup_dir/dnsdist.conf" "$DEADMAN_DNSDIST_CONF"; then
+        echo "[Deadman] ERROR: dnsdist config restore failed"
+        rc=1
+    elif ! sudo systemctl restart dnsdist; then
+        echo "[Deadman] ERROR: dnsdist restart failed"
+        rc=1
+    fi
+    [ "$rc" -eq 0 ] && echo "[Deadman] rollback complete"
+    return "$rc"
+}
 
 cmd_deadman_start() {
-    echo "Starting deadman switch (60 seconds)..."
-    if [ -f "$DEADMAN_PID_FILE" ]; then
-        if kill -0 "$(cat "$DEADMAN_PID_FILE" 2>/dev/null)" 2>/dev/null; then
-            echo "Error: Deadman switch is already running." >&2
-            return 1
-        fi
+    local state pid_file backup_dir
+    state=$(deadman_state_dir) || return 1
+    pid_file="$state/deadman.pid"
+    if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
+        echo "Error: Deadman switch is already running (or rolling back)." >&2
+        return 1
     fi
 
-    # Backup critical config in a unique, restricted directory
-    local backup_dir
-    mkdir -p "$DEADMAN_BACKUP_BASE" 2>/dev/null || true
-    backup_dir=$(mktemp -d "$DEADMAN_BACKUP_BASE/deadman.XXXXXX" 2>/dev/null || mktemp -d "/tmp/agentic_dns_deadman.XXXXXX")
-    chmod 700 "$backup_dir" 2>/dev/null || true
-    echo "$backup_dir" > "$DEADMAN_BACKUP_STATE_FILE"
-    cp -p /etc/dnsdist/dnsdist.conf "$backup_dir/" 2>/dev/null || true
-    # We could backup nftables rules here too if needed: sudo nft list ruleset > "$backup_dir/nftables.rules" 2>/dev/null || true
+    # Fail closed: never arm without a complete snapshot to roll back to.
+    if ! backup_dir=$(mktemp -d "$state/backup.XXXXXX"); then
+        echo "Error: cannot create deadman backup dir; switch NOT armed." >&2
+        return 1
+    fi
+    # shellcheck disable=SC2024 # backup must be owned by us, not root
+    if ! sudo nft list ruleset > "$backup_dir/nftables.rules"; then
+        echo "Error: cannot snapshot nftables ruleset; switch NOT armed." >&2
+        rm -rf "$backup_dir"
+        return 1
+    fi
+    # shellcheck disable=SC2024 # backup must be owned by us, not root
+    if [ ! -f "$DEADMAN_DNSDIST_CONF" ] || {
+        ! cat "$DEADMAN_DNSDIST_CONF" > "$backup_dir/dnsdist.conf" 2>/dev/null \
+        && ! sudo cat "$DEADMAN_DNSDIST_CONF" > "$backup_dir/dnsdist.conf"; }; then
+        echo "Error: cannot back up $DEADMAN_DNSDIST_CONF; switch NOT armed." >&2
+        rm -rf "$backup_dir"
+        return 1
+    fi
+    echo "$backup_dir" > "$state/backup_dir"
 
-    # Launch background countdown
+    # Detach from the caller's stdio: MCP captures our output with $(...), which
+    # would otherwise block until this timer exits.
     (
-        sleep 60
-        # If we reach here without being killed by commit, rollback
-        echo "[Deadman] Timeout reached! Rolling back network configurations..." >&2
-        local rollback_dir rollback_file
-        rollback_dir=$(cat "$DEADMAN_BACKUP_STATE_FILE" 2>/dev/null)
-        rollback_file="$rollback_dir/dnsdist.conf"
-        if [ -n "$rollback_dir" ] && [ -f "$rollback_file" ] && [ ! -L "$rollback_file" ] && [ "$(stat -c '%u' "$rollback_file" 2>/dev/null)" = "$(id -u)" ]; then
-            sudo cp -p "$rollback_file" /etc/dnsdist/dnsdist.conf
-            sudo systemctl restart dnsdist 2>/dev/null || true
-        fi
-        rm -rf "$rollback_dir"
-        rm -f "$DEADMAN_BACKUP_STATE_FILE"
-        rm -f "$DEADMAN_PID_FILE"
-    ) &
-    echo $! > "$DEADMAN_PID_FILE"
-    echo "Deadman switch armed. Call sys_deadman_commit within 60 seconds."
+        sleep "$DEADMAN_SECONDS" &
+        sleep_pid=$!
+        trap 'kill "$sleep_pid" 2>/dev/null; exit 0' TERM
+        wait "$sleep_pid"
+        # Past the deadline: commit can no longer interrupt the rollback, and
+        # pid_file stays until it finishes so start cannot snapshot mid-restore.
+        trap '' TERM
+        : > "$state/rolling_back"
+        deadman_rollback "$backup_dir" && rm -rf "$backup_dir"
+        rm -f "$state/rolling_back" "$state/backup_dir" "$pid_file"
+    ) </dev/null >>"$state/deadman.log" 2>&1 &
+    echo $! > "$pid_file"
+    echo "Deadman switch armed (${DEADMAN_SECONDS}s): nftables ruleset and $DEADMAN_DNSDIST_CONF snapshotted."
+    echo "Call sys_deadman_commit before the deadline to keep changes. Log: $state/deadman.log"
 }
 
 cmd_deadman_commit() {
-    echo "Committing network changes (disarming deadman switch)..."
-    if [ -f "$DEADMAN_PID_FILE" ]; then
-        local pid
-        pid=$(cat "$DEADMAN_PID_FILE" 2>/dev/null)
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null
-            echo "Deadman switch successfully canceled."
-        else
-            echo "Deadman switch was not active (or already timed out)."
-        fi
-        rm -f "$DEADMAN_PID_FILE"
-    else
-        echo "No deadman switch active."
+    local state pid_file pid backup_dir
+    state=$(deadman_state_dir) || return 1
+    pid_file="$state/deadman.pid"
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+        echo "No deadman switch active (not armed, or already timed out and rolled back)."
+        rm -f "$pid_file"
+        return 1
     fi
-    local backup_dir
-    backup_dir=$(cat "$DEADMAN_BACKUP_STATE_FILE" 2>/dev/null)
-    rm -rf "$backup_dir"
-    rm -f "$DEADMAN_BACKUP_STATE_FILE"
+    local _
+    if [ ! -e "$state/rolling_back" ] && kill "$pid" 2>/dev/null; then
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
+    fi
+    # Only a timer that actually exited counts as cancelled; past the deadline it ignores TERM.
+    if [ -e "$state/rolling_back" ] || kill -0 "$pid" 2>/dev/null; then
+        echo "Error: deadline passed; rollback in progress, changes NOT committed. Log: $state/deadman.log" >&2
+        return 1
+    fi
+    backup_dir=$(cat "$state/backup_dir" 2>/dev/null)
+    [ -n "$backup_dir" ] && rm -rf "$backup_dir"
+    rm -f "$pid_file" "$state/backup_dir"
+    echo "Deadman switch disarmed; changes committed."
 }
 
 cmd_api() {
@@ -615,7 +672,7 @@ cmd_api_handler() {
 
 cmd_mcp() {
     log "Starting agentic-dns MCP server (JSON-RPC over stdio)..." >&2
-    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log" >&2
+    log "Tools: dns_status, dns_query, dns_trace, dns_health, dns_routes, dns_bypass, dns_pihole_log, sys_exec, sys_deadman_start, sys_deadman_commit" >&2
     
     while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
@@ -677,7 +734,7 @@ cmd_mcp() {
                 # Only respond if request has a valid id (string or number per JSON-RPC).
                 # Return -32600 for invalid id, suppress for notifications (no id).
                 if [ "$valid_id" = "true" ]; then
-                    printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}},{"name":"sys_exec","description":"Execute an arbitrary shell command (agentic permissions)","inputSchema":{"type":"object","properties":{"command":{"type":"string","description":"Command to run"}},"required":["command"]}},{"name":"sys_deadman_start","description":"Start a 60-second countdown deadman switch. If sys_deadman_commit is not called within 60 seconds, changes are reverted.","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"sys_deadman_commit","description":"Commit network changes and cancel the deadman switch countdown.","inputSchema":{"type":"object","properties":{},"required":[]}}]}}
+                    printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"dns_status","description":"Show status of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_query","description":"Query a domain through the DNS chain","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to resolve"}},"required":["domain"]}},{"name":"dns_trace","description":"Trace DNS path with packet capture","inputSchema":{"type":"object","properties":{"domain":{"type":"string","description":"Domain name to trace"}},"required":["domain"]}},{"name":"dns_health","description":"Check health of all DNS services","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_routes","description":"List current routing rules","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_pihole_log","description":"Show recent PiHole query log","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"dns_bypass","description":"Bypass a failing DNS service","inputSchema":{"type":"object","properties":{"service":{"type":"string","description":"Service to bypass"},"backup":{"type":"string","description":"Backup service to use"}},"required":["service"]}},{"name":"sys_exec","description":"Run an allowlisted read-only diagnostic command without a shell (ip/ss/ping/traceroute/dig/nslookup/resolvectl/systemctl/journalctl; read-only subcommands only; 30s timeout)","inputSchema":{"type":"object","properties":{"command":{"type":"string","description":"Command line, e.g. ip route show"}},"required":["command"]}},{"name":"sys_deadman_start","description":"Arm a 60-second deadman switch: snapshots the nftables ruleset and dnsdist config. If sys_deadman_commit is not called within 60 seconds, both are restored. Refuses to arm if the snapshot fails.","inputSchema":{"type":"object","properties":{},"required":[]}},{"name":"sys_deadman_commit","description":"Commit network changes and cancel the deadman switch countdown.","inputSchema":{"type":"object","properties":{},"required":[]}}]}}
 ' "$req_id"
                 elif [ "$has_id" = "true" ]; then
                     printf '{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request: id must be string or number"}}
@@ -793,8 +850,10 @@ cmd_mcp() {
                             }
                             if [ -n "$sys_command" ]; then
                                 # Parse into positional parameters without eval; then enforce allowlists.
+                                set -f
                                 # shellcheck disable=SC2086
                                 set -- $sys_command
+                                set +f
                                 if [ "$#" -eq 0 ]; then
                                     out="Error: No command provided"
                                 else
@@ -802,7 +861,8 @@ cmd_mcp() {
                                     case "$cmd" in
                                         "ip"|"ss"|"ping"|"traceroute"|"dig"|"nslookup"|"resolvectl"|"systemctl"|"journalctl")
                                             if validate_sys_exec_args "$@"; then
-                                                out=$("$@" 2>&1 || echo "Command failed with exit code $?")
+                                                # stdin is the JSON-RPC transport: never let the command read it.
+                                                out=$(timeout 30 "$@" </dev/null 2>&1 || echo "Command failed with exit code $?")
                                             else
                                                 out="Error: Command arguments not allowed"
                                             fi
