@@ -542,7 +542,7 @@ cmd_deadman_start() {
     state=$(deadman_state_dir) || return 1
     pid_file="$state/deadman.pid"
     if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file" 2>/dev/null)" 2>/dev/null; then
-        echo "Error: Deadman switch is already running." >&2
+        echo "Error: Deadman switch is already running (or rolling back)." >&2
         return 1
     fi
 
@@ -574,10 +574,12 @@ cmd_deadman_start() {
         sleep_pid=$!
         trap 'kill "$sleep_pid" 2>/dev/null; exit 0' TERM
         wait "$sleep_pid"
-        # Past the deadline: commit can no longer interrupt the rollback.
+        # Past the deadline: commit can no longer interrupt the rollback, and
+        # pid_file stays until it finishes so start cannot snapshot mid-restore.
         trap '' TERM
-        rm -f "$pid_file" "$state/backup_dir"
+        : > "$state/rolling_back"
         deadman_rollback "$backup_dir" && rm -rf "$backup_dir"
+        rm -f "$state/rolling_back" "$state/backup_dir" "$pid_file"
     ) </dev/null >>"$state/deadman.log" 2>&1 &
     echo $! > "$pid_file"
     echo "Deadman switch armed (${DEADMAN_SECONDS}s): nftables ruleset and $DEADMAN_DNSDIST_CONF snapshotted."
@@ -594,8 +596,16 @@ cmd_deadman_commit() {
         rm -f "$pid_file"
         return 1
     fi
-    if ! kill "$pid" 2>/dev/null; then
-        echo "Error: failed to cancel deadman switch (pid $pid)." >&2
+    local _
+    if [ ! -e "$state/rolling_back" ] && kill "$pid" 2>/dev/null; then
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
+    fi
+    # Only a timer that actually exited counts as cancelled; past the deadline it ignores TERM.
+    if [ -e "$state/rolling_back" ] || kill -0 "$pid" 2>/dev/null; then
+        echo "Error: deadline passed; rollback in progress, changes NOT committed. Log: $state/deadman.log" >&2
         return 1
     fi
     backup_dir=$(cat "$state/backup_dir" 2>/dev/null)

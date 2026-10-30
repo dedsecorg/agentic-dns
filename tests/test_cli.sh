@@ -59,6 +59,7 @@ esac
 SH
 cat > "$SANDBOX/bin/systemctl" <<'SH'
 #!/usr/bin/env bash
+sleep "${SLOW_SYSTEMCTL:-0}"
 echo "$*" >> "$SANDBOX/systemctl.log"
 SH
 cat > "$SANDBOX/bin/nslookup" <<'SH'
@@ -121,6 +122,21 @@ rm -f "$SANDBOX/dnsdist.conf"
 mcp_call sys_deadman_start | grep -q 'switch NOT armed'
 [ ! -e "$SANDBOX/state/deadman.pid" ] || ! kill -0 "$(cat "$SANDBOX/state/deadman.pid")" 2>/dev/null
 [ -z "$(find "$SANDBOX/state" -maxdepth 1 -name 'backup.*')" ]
+echo "PASSED"
+
+echo -n "Test 10: no re-arm or commit while a rollback is in progress... "
+reset_sandbox
+export SLOW_SYSTEMCTL=3 # inherited by the timer, so its rollback takes ~3s
+mcp_call sys_deadman_start | grep -q 'Deadman switch armed'
+echo "-- changed" > "$SANDBOX/dnsdist.conf"
+sleep $(( AGENTIC_DNS_DEADMAN_SECONDS + 1 ))
+[ -e "$SANDBOX/state/rolling_back" ]
+mcp_call sys_deadman_start | grep -q 'already running'
+mcp_call sys_deadman_commit | grep -q 'changes NOT committed'
+sleep 4
+unset SLOW_SYSTEMCTL
+grep -qx -- '-- original' "$SANDBOX/dnsdist.conf"
+[ ! -e "$SANDBOX/state/rolling_back" ] && [ ! -e "$SANDBOX/state/deadman.pid" ]
 echo "PASSED"
 
 echo "=== All tests passed cleanly ==="
